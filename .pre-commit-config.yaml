@@ -1,0 +1,55 @@
+repos:
+  - repo: https://github.com/charliermarsh/ruff-pre-commit
+    rev: v0.12.4 # Use latest Ruff version
+    hooks:
+      - id: ruff
+        args: [--fix]
+
+  - repo: https://github.com/psf/black
+    rev: 25.1.0
+    hooks:
+      - id: black
+
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v5.0.0
+    hooks:
+      - id: check-added-large-files
+      - id: check-case-conflict
+      - id: check-merge-conflict
+      - id: check-yaml
+      - id: end-of-file-fixer
+      - id: trailing-whitespace
+      - id: requirements-txt-fixer
+
+  - repo: https://github.com/Yelp/detect-secrets
+    rev: v1.5.0
+    hooks:
+      - id: detect-secrets
+        args: ["--baseline", ".secrets.baseline"]
+
+
+  - repo: https://github.com/asottile/pyupgrade
+    rev: v3.20.0
+    hooks:
+      - id: pyupgrade
+        args: [--py310-plus]
+
+  - repo: https://github.com/pre-commit/mirrors-mypy
+    rev: v1.17.0
+    hooks:
+      - id: mypy
+
+  - repo: https://github.com/codespell-project/codespell
+    rev: v2.4.1
+    hooks:
+      - id: codespell
+
+  # -   repo: https://github.com/markdownlint/markdownlint
+  #     rev: v0.11.0
+  #     hooks:
+  #     -   id: markdownlint
+  #         name: Markdownlint
+  #         description: Run markdownlint on your Markdown files
+  #         entry: mdl -r ~MD013,~MD026
+  #         language: ruby
+  #         files: \.(md|mdown|markdown|myst)$

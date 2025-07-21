@@ -1,8 +1,8 @@
-# Telemedicine Intake Assistant – Product Features
+# SymptomSync – Product Features
 
 ## Overview
 
-The **Telemedicine Intake Assistant** is a generative AI-powered system that interacts with patients through a conversational interface (text or voice) to gather relevant medical information before a consultation. It aims to reduce consultation time, improve doctor preparedness, and streamline appointment scheduling without taking on the role of diagnosis.
+The **SymptomSync** is a generative AI-powered system that interacts with patients through a conversational interface (text or voice) to gather relevant medical information before a consultation. It aims to reduce consultation time, improve doctor preparedness, and streamline appointment scheduling without taking on the role of diagnosis.
 
 ---
 

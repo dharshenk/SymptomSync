@@ -2,6 +2,9 @@
   "name": "Python Dev Container",
   "image": "mcr.microsoft.com/devcontainers/python:3.11",
   "postCreateCommand": "bash .devcontainer/post-create.sh",
+  "features": {
+    "ghcr.io/devcontainers/features/docker-outside-of-docker:1.6.3": {}
+  },
   "customizations": {
     "vscode": {
       "extensions": [

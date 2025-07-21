@@ -12,6 +12,8 @@ services:
       - "5432:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
+    networks:
+      - symptomSync_backend
     restart: unless-stopped
 
   redis-db:
@@ -22,4 +24,13 @@ services:
     command: redis-server --requirepass ${REDIS_PASSWORD:-admin}
     volumes:
       - redisdata:/data
+    networks:
+      - symptomSync_backend
     restart: unless-stopped
+
+volumes:
+  pgdata:
+  redisdata:
+
+networks:
+  symptomSync_backend:

@@ -1,12 +1,13 @@
-Here is the **High-Level Design (HLD) Document** for the *SymptomSync* based on the application requirements and architecture diagram you provided:
-
----
-
 # 📘 High-Level Design (HLD)
 
 ## 1. Introduction
 
-The **SymptomSync** is a conversational AI system that streamlines the patient intake process before medical consultations. It interacts with users over **WhatsApp** and **web UI**, gathers structured data, stores relevant context, and provides a summarized output for healthcare professionals. This document captures the architecture, data flow, component responsibilities, and key design considerations.
+The **SymptomSync** is a conversational AI system that streamlines the patient
+intake process before medical consultations. It interacts with users over
+**WhatsApp** and **web UI**, gathers structured data, stores relevant context,
+and provides a summarized output for healthcare professionals. This document
+captures the architecture, data flow, component responsibilities, and key design
+considerations.
 
 ---
 

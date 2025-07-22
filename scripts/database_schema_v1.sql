@@ -111,9 +111,9 @@ CREATE TABLE chat_messages (
     metadata JSONB, -- store additional message data like attachments, coordinates, etc.
     timestamp TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
 
-    -- Ensure message ordering within session
     UNIQUE(session_id, message_sequence)
 );
+    -- Ensure message ordering within session
 
 -- =====================================================
 -- APPOINTMENT MANAGEMENT

@@ -1,0 +1,290 @@
+classDiagram
+    %% DB Service Classes
+    class DBService {
+        -connection_pool: ConnectionPool
+        -config: DatabaseConfig
+        +connect(): bool
+        +disconnect(): void
+        +execute_query(query: str, params: dict): QueryResult
+        +execute_transaction(queries: List~Query~): bool
+        +get_health_status(): HealthStatus
+    }
+
+    class DatabaseConfig {
+        +host: str
+        +port: int
+        +database: str
+        +username: str
+        +password: str
+        +pool_size: int
+        +timeout: int
+        +ssl_mode: str
+    }
+
+    class ConnectionPool {
+        -min_connections: int
+        -max_connections: int
+        -active_connections: List~Connection~
+        -idle_connections: Queue~Connection~
+        +get_connection(): Connection
+        +release_connection(conn: Connection): void
+        +create_connection(): Connection
+        +validate_connection(conn: Connection): bool
+    }
+
+    class Connection {
+        -connection_id: str
+        -is_active: bool
+        -last_used: datetime
+        +execute(query: str, params: dict): Result
+        +begin_transaction(): Transaction
+        +commit(): void
+        +rollback(): void
+        +close(): void
+    }
+
+    class QueryResult {
+        +rows: List~dict~
+        +row_count: int
+        +execution_time: float
+        +success: bool
+        +error_message: str
+    }
+
+    class Transaction {
+        -transaction_id: str
+        -connection: Connection
+        -is_active: bool
+        +execute(query: str, params: dict): Result
+        +commit(): bool
+        +rollback(): bool
+    }
+
+    %% Repository Pattern Classes
+    class PatientRepository {
+        -db_service: DBService
+        +create_patient(patient: PatientModel): str
+        +get_patient_by_id(patient_id: str): PatientModel
+        +get_patient_by_phone(phone: str): PatientModel
+        +update_patient(patient_id: str, data: dict): bool
+        +delete_patient(patient_id: str): bool
+        +is_patient_active(patient_id: str): bool
+    }
+
+    class DoctorRepository {
+        -db_service: DBService
+        +create_doctor(doctor: DoctorModel): str
+        +get_doctor_by_id(doctor_id: str): DoctorModel
+        +get_doctors_by_specialization(spec: str): List~DoctorModel~
+        +get_available_doctors(date: date): List~DoctorModel~
+        +update_doctor(doctor_id: str, data: dict): bool
+        +toggle_doctor_availability(doctor_id: str, status: bool): bool
+    }
+
+    class ChatSessionRepository {
+        -db_service: DBService
+        +create_session(session: ChatSessionModel): str
+        +get_session_by_id(session_id: str): ChatSessionModel
+        +get_active_sessions_by_patient(patient_id: str): List~ChatSessionModel~
+        +update_session_status(session_id: str, status: str): bool
+        +add_message_to_session(session_id: str, message: ChatMessageModel): str
+        +get_session_messages(session_id: str): List~ChatMessageModel~
+    }
+
+    class AppointmentRepository {
+        -db_service: DBService
+        +create_appointment(appointment: AppointmentModel): str
+        +get_appointment_by_id(appointment_id: str): AppointmentModel
+        +get_patient_appointments(patient_id: str): List~AppointmentModel~
+        +get_doctor_appointments(doctor_id: str, date: date): List~AppointmentModel~
+        +get_available_slots(doctor_id: str, date: date): List~TimeSlot~
+        +update_appointment_status(appointment_id: str, status: str): bool
+        +cancel_appointment(appointment_id: str, reason: str): bool
+    }
+
+    %% Redis Service Classes
+    class RedisService {
+        -connection_pool: RedisConnectionPool
+        -config: RedisConfig
+        +connect(): bool
+        +disconnect(): void
+        +get(key: str): str
+        +set(key: str, value: str, ttl: int): bool
+        +delete(key: str): bool
+        +exists(key: str): bool
+        +get_hash(key: str): dict
+        +set_hash(key: str, data: dict, ttl: int): bool
+        +get_list(key: str): List~str~
+        +push_to_list(key: str, value: str): bool
+        +get_health_status(): HealthStatus
+    }
+
+    class RedisConfig {
+        +host: str
+        +port: int
+        +password: str
+        +database: int
+        +pool_size: int
+        +timeout: int
+        +retry_attempts: int
+    }
+
+    class RedisConnectionPool {
+        -max_connections: int
+        -active_connections: List~RedisConnection~
+        -idle_connections: Queue~RedisConnection~
+        +get_connection(): RedisConnection
+        +release_connection(conn: RedisConnection): void
+        +create_connection(): RedisConnection
+    }
+
+    class RedisConnection {
+        -connection_id: str
+        -is_active: bool
+        -last_used: datetime
+        +execute_command(cmd: str, args: List): Any
+        +pipeline(): RedisPipeline
+        +close(): void
+    }
+
+    %% Cache Management Classes
+    class CacheManager {
+        -redis_service: RedisService
+        -default_ttl: int
+        +cache_chat_session(session_id: str, data: dict): bool
+        +get_cached_session(session_id: str): dict
+        +cache_patient_profile(patient_id: str, data: dict): bool
+        +get_cached_patient(patient_id: str): dict
+        +cache_doctor_availability(doctor_id: str, date: date, slots: List): bool
+        +get_cached_availability(doctor_id: str, date: date): List
+        +invalidate_cache(pattern: str): bool
+        +set_session_lock(session_id: str, ttl: int): bool
+        +release_session_lock(session_id: str): bool
+    }
+
+    class SessionCache {
+        -cache_manager: CacheManager
+        -session_ttl: int
+        +store_active_session(session_id: str, data: ChatSessionModel): bool
+        +get_active_session(session_id: str): ChatSessionModel
+        +update_session_messages(session_id: str, messages: List~ChatMessageModel~): bool
+        +mark_session_completed(session_id: str): bool
+        +cleanup_expired_sessions(): int
+    }
+
+    %% Data Models
+    class PatientModel {
+        +id: str
+        +patient_id: str
+        +first_name: str
+        +last_name: str
+        +email: str
+        +phone_number: str
+        +whatsapp_number: str
+        +date_of_birth: date
+        +gender: str
+        +is_active: bool
+        +created_at: datetime
+        +updated_at: datetime
+    }
+
+    class DoctorModel {
+        +id: str
+        +doctor_id: str
+        +first_name: str
+        +last_name: str
+        +email: str
+        +phone_number: str
+        +license_number: str
+        +specialization: str
+        +consultation_fee: decimal
+        +consultation_duration: int
+        +is_active: bool
+        +created_at: datetime
+        +updated_at: datetime
+    }
+
+    class ChatSessionModel {
+        +id: str
+        +session_id: str
+        +patient_id: str
+        +session_status: str
+        +started_at: datetime
+        +completed_at: datetime
+        +total_messages: int
+        +session_summary: str
+        +appointment_requested: bool
+    }
+
+    class ChatMessageModel {
+        +id: str
+        +session_id: str
+        +message_sequence: int
+        +sender_type: str
+        +message_content: str
+        +message_type: str
+        +metadata: dict
+        +timestamp: datetime
+    }
+
+    class AppointmentModel {
+        +id: str
+        +appointment_number: str
+        +patient_id: str
+        +doctor_id: str
+        +chat_session_id: str
+        +appointment_date: date
+        +start_time: time
+        +end_time: time
+        +appointment_type: str
+        +status: str
+        +consultation_fee: decimal
+        +payment_status: str
+        +patient_notes: str
+        +doctor_notes: str
+    }
+
+    class TimeSlot {
+        +start_time: time
+        +end_time: time
+        +is_available: bool
+        +duration: int
+    }
+
+    class HealthStatus {
+        +is_healthy: bool
+        +response_time: float
+        +last_check: datetime
+        +error_message: str
+    }
+
+    %% Relationships
+    DBService --> DatabaseConfig
+    DBService --> ConnectionPool
+    ConnectionPool --> Connection
+    Connection --> Transaction
+    DBService --> QueryResult
+
+    PatientRepository --> DBService
+    DoctorRepository --> DBService
+    ChatSessionRepository --> DBService
+    AppointmentRepository --> DBService
+
+    PatientRepository --> PatientModel
+    DoctorRepository --> DoctorModel
+    ChatSessionRepository --> ChatSessionModel
+    ChatSessionRepository --> ChatMessageModel
+    AppointmentRepository --> AppointmentModel
+    AppointmentRepository --> TimeSlot
+
+    RedisService --> RedisConfig
+    RedisService --> RedisConnectionPool
+    RedisConnectionPool --> RedisConnection
+
+    CacheManager --> RedisService
+    SessionCache --> CacheManager
+    SessionCache --> ChatSessionModel
+    SessionCache --> ChatMessageModel
+
+    DBService --> HealthStatus
+    RedisService --> HealthStatus

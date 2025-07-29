@@ -9,13 +9,24 @@ repos:
     rev: 25.1.0
     hooks:
       - id: black
-  - repo: local
+  - repo: https://github.com/jazzband/pip-tools
+    rev: 7.4.1
     hooks:
-      - id: compile-requirements
-        name: Compile requirements.txt from requirements.in
-        entry: bash -c 'pip-compile requirements.in'
-        language: system  # Uses the system environment (assumes pip-compile is available)
-        files: ^requirements\.in$
+      - id: pip-compile
+        name: pip-compile setup.py
+        files: ^(setup\.py|requirements\.txt)$
+      - id: pip-compile
+        name: pip-compile requirements-dev.in
+        args: [requirements-dev.in]
+        files: ^requirements-dev\.(in|txt)$
+      - id: pip-compile
+        name: pip-compile requirements-lint.in
+        args: [requirements-lint.in]
+        files: ^requirements-lint\.(in|txt)$
+      - id: pip-compile
+        name: pip-compile requirements.in
+        args: [requirements.in]
+        files: ^requirements\.(in|txt)$
   - repo: https://github.com/pre-commit/pre-commit-hooks
     rev: v5.0.0
     hooks:

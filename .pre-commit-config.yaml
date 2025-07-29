@@ -9,7 +9,13 @@ repos:
     rev: 25.1.0
     hooks:
       - id: black
-
+  - repo: local
+    hooks:
+      - id: compile-requirements
+        name: Compile requirements.txt from requirements.in
+        entry: bash -c 'pip-compile requirements.in'
+        language: system  # Uses the system environment (assumes pip-compile is available)
+        files: ^requirements\.in$
   - repo: https://github.com/pre-commit/pre-commit-hooks
     rev: v5.0.0
     hooks:

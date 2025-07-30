@@ -30,6 +30,14 @@ class Connection:
                 f"error from connection:{self.connection_id} when committing: {e}"
             )
 
+    def rollback(self):
+        try:
+            self.conn.rollback()
+        except Exception as e:
+            logging.error(
+                f"error from connection: {self.connection_id} when rollingback: {e}"
+            )
+
     def close(self):
         if self.conn:
             try:

@@ -9,7 +9,7 @@ class Transaction:
 
     def execute(self, query: str, params: dict):
         try:
-            self.connection.execute()
+            self.connection.execute(query, params)
         except Exception as e:
             logging.error(
                 f"error executing transaction: {self.transaction_id} when executing: {e}"
@@ -17,7 +17,7 @@ class Transaction:
 
     def commit(self):
         try:
-            self.connection.rollback()
+            self.connection.commit()
         except Exception as e:
             logging.error(
                 f"error executing transaction: {self.transaction_id} when committing: {e}"

@@ -1,23 +1,32 @@
 import uuid
 import logging
+from models.query_result import QueryResult
 
 
 class Connection:
     def __init__(self, psycopg2_conn):
         self.connection_id = uuid.uuid4()
-        self.is_active = False
+        self.is_active = None
         self.psycopg2_conn = psycopg2_conn
 
-    def execute(self, query: str, params: dict | None, fetch_mode: str = "all"):
+    def execute(self, query: str, params: dict | None):
         try:
             self.cursor = self.psycopg2_conn.cursor()
             self.cursor.execute(query, params) if params else self.cursor.execute(query)
+
             if query.strip().lower().startswith("select"):
-                return self.cursor.fetchall()
+                rows = self.cursor.fetchall()
+
+            else:
+                rows = []
+
+                return QueryResult(rows=rows, success=True, error_message="")
+
         except Exception as e:
             logging.error(
                 f"error from connection:{self.connection_id} when executing query: {e}"
             )
+            return QueryResult(rows=rows, success=False, error_message=str(e))
 
         finally:
             self.cursor.close()

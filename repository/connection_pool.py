@@ -1,15 +1,14 @@
 import psycopg2
-import os
 from repository.connection import Connection
 import time
 
 
 class ConnectionPool:
-    def __init__(self) -> None:
+    def __init__(self, config) -> None:
         self.max_connections = 3
         self.available_connections: list[Connection] = []
         self.active_connections: list[Connection] = []
-        self.pg_conn_params = os.getenv("PG_CONN_PARAMS")
+        self.config = config
 
     def get_connection(self):
         if self.available_connections:
@@ -27,13 +26,19 @@ class ConnectionPool:
         return self._wait_and_pop_connection()
 
     def release_connection(self, connection: Connection):
-        self.available_connections.pop()
-        connection.is_active = False
-        self._add_to_available_connections(connection)
+        if connection in self.active_connections:
+            self.active_connections.remove(connection)
+            connection.is_active = False
+            self._add_to_available_connections(connection)
 
     def _create_connection(self):
-
-        psycopg2_conn = psycopg2.connect(self.pg_conn_params)
+        psycopg2_conn = psycopg2.connect(
+            host=self.config.host,
+            port=self.config.port,
+            database=self.config.database,
+            user=self.config.username,
+            password=self.config.password,
+        )
         connection = Connection(psycopg2_conn)
         return connection
 
@@ -45,7 +50,19 @@ class ConnectionPool:
         start_time = time.time()
         while time.time() - start_time < timeout:
             if self.available_connections:
-                return self.available_connections.pop()
+                connection = self.available_connections.pop()
+                self.active_connections.append(connection)
+                connection.is_active = True
+                return connection
+
             time.sleep(0.1)
 
         raise TimeoutError(f"No connections available within {timeout} seconds")
+
+    def close_all_connections(self):
+        """Close all connections when shutting down the pool"""
+        all_connections = self.active_connections + self.available_connections
+        for connection in all_connections:
+            connection.close()
+        self.active_connections.clear()
+        self.available_connections.clear()

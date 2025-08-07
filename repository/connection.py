@@ -10,6 +10,7 @@ class Connection:
         self.psycopg2_conn = psycopg2_conn
 
     def execute(self, query: str, params: dict | None):
+        rows = []
         try:
             self.cursor = self.psycopg2_conn.cursor()
             self.cursor.execute(query, params) if params else self.cursor.execute(query)

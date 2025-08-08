@@ -1,6 +1,7 @@
 import uuid
 import logging
 from models.query_result import QueryResult
+from psycopg2.extras import DictCursor
 
 
 class Connection:
@@ -12,12 +13,11 @@ class Connection:
     def execute(self, query: str, params: dict | None):
         rows = []
         try:
-            self.cursor = self.psycopg2_conn.cursor()
+            self.cursor = self.psycopg2_conn.cursor(cursor_factory=DictCursor)
             self.cursor.execute(query, params) if params else self.cursor.execute(query)
 
             if query.strip().lower().startswith("select"):
-                rows = self.cursor.fetchall()
-
+                rows = [dict(row) for row in self.cursor.fetchall()]
             else:
                 rows = []
 

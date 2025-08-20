@@ -1,0 +1,6 @@
+pre-commit
+pip-tools
+black
+pytest
+pytest-cov
+python-dotenv

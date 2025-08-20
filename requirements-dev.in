@@ -3,3 +3,4 @@ pip-tools
 black
 pytest
 pytest-cov
+python-dotenv

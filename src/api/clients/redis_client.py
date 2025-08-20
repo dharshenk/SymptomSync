@@ -10,7 +10,6 @@ from typing import (
 )
 from collections.abc import Callable, Iterator
 from contextlib import contextmanager
-from dataclasses import dataclass
 from functools import wraps
 import pickle
 from types import TracebackType
@@ -26,7 +25,6 @@ SerializableValue = Union[str, bytes, int, float, dict[str, Any], list[Any], Non
 DeserializedValue = Union[str, int, float, dict[str, Any], list[Any], None]
 
 
-@dataclass
 class RedisConfig(BaseModel):
     """Redis configuration settings with type annotations"""
 
@@ -35,11 +33,6 @@ class RedisConfig(BaseModel):
     db: int
     password: str | None = None
     username: str | None = None
-    ssl: bool = False
-    ssl_cert_reqs: str | None = None
-    ssl_ca_certs: str | None = None
-    ssl_certfile: str | None = None
-    ssl_keyfile: str | None = None
 
     # Connection pool settings
     max_connections: int = 10
@@ -50,10 +43,6 @@ class RedisConfig(BaseModel):
     max_retries: int = 3
     retry_delay: float = 0.1
     backoff_factor: float = 2.0
-
-    # Timeout settings
-    socket_timeout: float = 5.0
-    socket_connect_timeout: float = 5.0
 
 
 class RedisConnectionError(Exception):
@@ -123,16 +112,9 @@ class RedisClient:
                 db=self.config.db,
                 password=self.config.password,
                 username=self.config.username,
-                ssl=self.config.ssl,
-                ssl_cert_reqs=self.config.ssl_cert_reqs,
-                ssl_ca_certs=self.config.ssl_ca_certs,
-                ssl_certfile=self.config.ssl_certfile,
-                ssl_keyfile=self.config.ssl_keyfile,
                 max_connections=self.config.max_connections,
                 retry_on_timeout=self.config.retry_on_timeout,
                 health_check_interval=self.config.health_check_interval,
-                socket_timeout=self.config.socket_timeout,
-                socket_connect_timeout=self.config.socket_connect_timeout,
             )
 
             self._client = redis.Redis(connection_pool=self._pool)

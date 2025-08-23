@@ -3,6 +3,10 @@ from pydantic import BaseModel
 import logging
 import psycopg2
 import psycopg2.pool
+from contextlib import contextmanager
+from psycopg2.extras import RealDictCursor
+from typing import Any
+from psycopg2.extensions import connection as psycopg2_connection
 
 load_dotenv()
 
@@ -36,9 +40,8 @@ class PostgresSQLClient:
 
     def __init__(self, config: DatabaseConfig) -> None:
         self.config = config
-        self._pool = None
         self.logger = logging.getLogger(__name__)
-        self._initialize_pool()
+        self._pool = self._initialize_pool()
 
     def _initialize_pool(self):
         """Initialize connection pool"""
@@ -52,14 +55,82 @@ class PostgresSQLClient:
                 "connect_timeout": self.config.connect_timeout,
                 "options": f"-c statement_timeout={self.config.command_timeout * 1000}",
             }
-            self._pool = psycopg2.pool.ThreadedConnectionPool(
+            _pool = psycopg2.pool.ThreadedConnectionPool(
                 minconn=self.config.min_connections,
                 maxconn=self.config.max_connections,
                 **conn_params,
             )
+            self.logger.info(
+                f"Database pool initialized: {self.config.min_connections}-{self.config.max_connections} connections"
+            )
+            return _pool
         except Exception as e:
             self.logger.error(f"Failed to initialize database pool: {e}")
             raise DatabaseError(f"Database pool initialization failed: {e}")
 
+    @contextmanager
     def get_connection(self):
-        pass
+        conn: psycopg2_connection | None = None
+
+        try:
+            conn = self._pool.getconn()
+            yield conn
+
+        except Exception as e:
+            if conn:
+                conn.rollback()
+            self.logger.error(f"Database operation failed:{e}")
+            raise DatabaseError(f"Database operation failed: {e}")
+
+        finally:
+            if conn:
+                self._pool.putconn(conn)
+
+    @contextmanager
+    def transaction(self):
+        try:
+            with self.get_connection() as conn:
+                yield conn
+                conn.commit()
+        except:
+            if conn:
+                conn.rollback()
+            raise
+
+    def execute_query(
+        self,
+        query: str,
+        params: tuple | dict | None = None,
+        fetch: str = "all",
+    ) -> list[dict[str, Any]] | None:
+
+        with self.get_connection() as conn:
+            with conn.cursor(cursor_factory=RealDictCursor) as cursor:
+                cursor.execute(query, params)
+                if fetch == "all":
+                    return [dict(row) for row in cursor.fetchall()]
+                elif fetch == "one":
+                    row = cursor.fetchone()
+                    return [dict(row)] if row else None
+                else:
+                    return None
+
+    def execute_command(self, query: str, params: tuple | dict | None = None) -> int:
+
+        with self.transaction() as conn:
+            with conn.cursor() as cursor:
+                cursor.execute(query, params)
+                return cursor.rowcount
+
+    def execute_many(self, query: str, params_list: list[tuple | dict]) -> int:
+
+        with self.transaction() as conn:
+            with conn.cursor() as cursor:
+                cursor.executemany(query, params_list)
+                return cursor.rowcount
+
+    def close(self):
+        """Close all connections in the pool."""
+        if self._pool:
+            self._pool.closeall()
+            self.logger.info("Database pool closed")

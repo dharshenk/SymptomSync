@@ -50,7 +50,7 @@ class PostgresSQLClient:
                 "host": self.config.host,
                 "port": self.config.port,
                 "database": self.config.database,
-                "username": self.config.username,
+                "user": self.config.username,
                 "password": self.config.password,
                 "connect_timeout": self.config.connect_timeout,
                 "options": f"-c statement_timeout={self.config.command_timeout * 1000}",
@@ -113,7 +113,7 @@ class PostgresSQLClient:
                     row = cursor.fetchone()
                     return [dict(row)] if row else None
                 else:
-                    return None
+                    raise ValueError("Fetch mode must be either 'all' or 'one'")
 
     def execute_command(self, query: str, params: tuple | dict | None = None) -> int:
 
@@ -128,6 +128,27 @@ class PostgresSQLClient:
             with conn.cursor() as cursor:
                 cursor.executemany(query, params_list)
                 return cursor.rowcount
+
+    def call_procedure(
+        self, proc_name: str, params: list | None = None
+    ) -> list[Any] | None:
+        """
+        Call stored procedure.
+
+        Args:
+            proc_name: Procedure name
+            params: Procedure parameters
+
+        Returns:
+            Procedure results
+        """
+        with self.get_connection() as conn:
+            with conn.cursor() as cursor:
+                cursor.callproc(proc_name, params or [])
+                try:
+                    return cursor.fetchall()
+                except psycopg2.ProgrammingError:
+                    return None
 
     def close(self):
         """Close all connections in the pool."""

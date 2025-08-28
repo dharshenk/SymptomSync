@@ -104,6 +104,9 @@ class PostgresSQLClient:
         fetch: str = "all",
     ) -> list[dict[str, Any]] | None:
 
+        if fetch not in ("all", "one"):
+            raise ValueError("Fetch mode must be either 'all' or 'one'")
+
         with self.get_connection() as conn:
             with conn.cursor(cursor_factory=RealDictCursor) as cursor:
                 cursor.execute(query, params)
@@ -112,8 +115,7 @@ class PostgresSQLClient:
                 elif fetch == "one":
                     row = cursor.fetchone()
                     return [dict(row)] if row else None
-                else:
-                    raise ValueError("Fetch mode must be either 'all' or 'one'")
+                return None
 
     def execute_command(self, query: str, params: tuple | dict | None = None) -> int:
 

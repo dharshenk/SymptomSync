@@ -1,2 +1,5 @@
 redis
 pydantic
+backoff
+httpx
+httpx[http2]

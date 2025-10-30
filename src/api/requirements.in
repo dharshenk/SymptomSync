@@ -1,2 +1,8 @@
 redis
 pydantic
+backoff
+httpx
+httpx[http2]
+requests
+types-requests
+psycopg2

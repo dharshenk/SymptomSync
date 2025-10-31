@@ -1,6 +1,6 @@
 from pydantic import BaseModel, Field, field_validator
 from typing import Any
-from uuid import UUID
+from uuid import UUID, uuid4
 from datetime import datetime, timezone
 from enum import Enum
 
@@ -29,8 +29,7 @@ def _now_utc() -> datetime:
 
 
 class ChatSession(BaseModel):
-    id: UUID | None
-    session_id: str = Field(..., max_length=50)
+    session_id: UUID = Field(default_factory=uuid4)
     patient_id: UUID | None
     session_status: SessionStatus = Field(default=SessionStatus.active)
     started_at: datetime | None = Field(default_factory=_now_utc)
@@ -53,7 +52,6 @@ class ChatSession(BaseModel):
 
 
 class ChatMessage(BaseModel):
-    id: UUID | None
     session_id: UUID
     message_sequence: int = Field(..., ge=0)
     sender_type: SenderType

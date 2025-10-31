@@ -12,6 +12,6 @@ class AgentService:
     def _initialize_agent(self):
         return Agent(name=self.name, model=self.model, instructions=self.instructions)
 
-    def get_response(self, user_input: str):
-        response = Runner.run_sync(starting_agent=self._agent, input=user_input)
+    def get_response(self, question: str):
+        response = Runner.run_sync(starting_agent=self._agent, input=question)
         return response

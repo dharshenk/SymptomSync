@@ -6,3 +6,5 @@ httpx[http2]
 requests
 types-requests
 psycopg2
+openai-agents
+"openai-agents[litellm]"

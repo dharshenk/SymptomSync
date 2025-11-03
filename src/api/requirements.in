@@ -8,3 +8,4 @@ types-requests
 psycopg2
 openai-agents
 "openai-agents[litellm]"
+pytest

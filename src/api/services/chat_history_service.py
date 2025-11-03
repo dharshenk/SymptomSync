@@ -1,6 +1,5 @@
 from api.clients.postgres_sql_client import PostgresSQLClient
 from api.models.chat_session_model import ChatSession, ChatMessage
-from uuid import UUID
 
 
 class ChatHistoryService:
@@ -8,7 +7,7 @@ class ChatHistoryService:
     def __init__(self, postgres_client: PostgresSQLClient):
         self._postgres_client = postgres_client
 
-    async def create_session(self, session_id: UUID, patient_id: UUID) -> ChatSession:
+    async def create_session(self, session_id: str, patient_id: str) -> ChatSession:
         chat_session = ChatSession(session_id=session_id, patient_id=patient_id)
         insert_query = """
             INSERT INTO chat_sessions (
@@ -35,7 +34,7 @@ class ChatHistoryService:
         self._postgres_client.execute_command(query=insert_query, params=params)
         return chat_session
 
-    async def get_session(self, session_id: UUID) -> ChatSession | None:
+    async def get_session(self, session_id: str) -> ChatSession | None:
         select_query = """
             SELECT
                 id,
@@ -101,7 +100,7 @@ class ChatHistoryService:
         self._postgres_client.execute_command(query=insert_query, params=params)
         return
 
-    async def get_session_messages(self, session_id: UUID) -> list[ChatMessage]:
+    async def get_session_messages(self, session_id: str) -> list[ChatMessage] | None:
         select_query = """
             SELECT
                 id,
@@ -119,6 +118,9 @@ class ChatHistoryService:
         rows = self._postgres_client.execute_query(
             query=select_query, params=params, fetch="all"
         )
+        if not rows:
+            return None
+
         messages = [
             ChatMessage(
                 session_id=row["session_id"],

@@ -2,6 +2,12 @@ from pydantic import BaseModel, Field, field_validator
 from typing import Any
 from datetime import datetime, timezone
 from enum import Enum
+from uuid import UUID, uuid4
+
+
+# --------------------------------------------------------
+# ENUMS
+# --------------------------------------------------------
 
 
 class SessionStatus(str, Enum):
@@ -12,7 +18,7 @@ class SessionStatus(str, Enum):
 
 class SenderType(str, Enum):
     patient = "patient"
-    copilot = "copilot"
+    bot = "bot"  # Matches your SQL CHECK constraint
 
 
 class MessageType(str, Enum):
@@ -27,11 +33,19 @@ def _now_utc() -> datetime:
     return datetime.now(timezone.utc)
 
 
+# --------------------------------------------------------
+# CHAT SESSION MODEL
+# --------------------------------------------------------
+
+
 class ChatSession(BaseModel):
-    session_id: str = Field(..., max_length=50)
-    patient_id: str | None = Field(..., max_length=50)
+    id: UUID = Field(default_factory=uuid4)
+    session_id: str = Field(
+        ..., max_length=50, description="External session identifier"
+    )
+    patient_id: UUID | None = Field(None, description="FK to patients.id")
     session_status: SessionStatus = Field(default=SessionStatus.active)
-    started_at: datetime | None = Field(default_factory=_now_utc)
+    started_at: datetime = Field(default_factory=_now_utc)
     completed_at: datetime | None = None
     total_messages: int = Field(default=0, ge=0)
     session_summary: str | None = None
@@ -50,8 +64,16 @@ class ChatSession(BaseModel):
         use_enum_values = True
 
 
+# --------------------------------------------------------
+# CHAT MESSAGE MODEL
+# --------------------------------------------------------
+
+
 class ChatMessage(BaseModel):
-    session_id: str = Field(..., max_length=50)
+    id: UUID = Field(default_factory=uuid4)
+    session_id: UUID = Field(
+        ..., description="FK to chat_sessions.id"
+    )  # <-- UUID, not str
     message_sequence: int = Field(..., ge=0)
     sender_type: SenderType
     message_content: str

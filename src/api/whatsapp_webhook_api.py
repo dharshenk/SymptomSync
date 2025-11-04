@@ -1,7 +1,7 @@
 from api.models.IO_model import InputModel
 from api.services.chat_history_service import ChatHistoryService
 from api.clients.postgres_sql_client import PostgresSQLClient, DatabaseConfig
-from api.models.chat_session_model import ChatMessage
+from api.models.chat_session_model import ChatMessage, SenderType
 from agents import Agent, Runner
 from agents.extensions.models.litellm_model import LitellmModel
 from dotenv import load_dotenv
@@ -25,11 +25,17 @@ def format_messages_for_runner(
     Returns:
         list[dict]: Messages formatted as [{"role": "user", "content": "..."}, ...].
     """
+
+    sender_type_map = {"patient": "user", "bot": "assistant"}
+
     messages: list[dict] = []
 
     if previous_messages:
         messages.extend(
-            {"role": msg.sender_type.lower(), "content": msg.message_content}
+            {
+                "role": sender_type_map.get(msg.sender_type.lower()),
+                "content": msg.message_content,
+            }
             for msg in previous_messages
         )
 
@@ -56,13 +62,38 @@ chat_history_service = ChatHistoryService(postgres_client)
 
 
 async def get_response(user_input: InputModel):
-    messages = await chat_history_service.get_session_messages(
-        session_id=user_input.session_id
+    chat_session = await chat_history_service.get_session(user_input.session_id)
+    if not chat_session:
+        chat_session = await chat_history_service.create_session(
+            user_input.session_id, user_input.patient_id
+        )
+
+    previous_messages = await chat_history_service.get_session_messages(
+        session_id=chat_session.id
     )
+
     input_list = format_messages_for_runner(
-        user_question=user_input.input, previous_messages=messages
+        user_question=user_input.input, previous_messages=previous_messages
     )
     response = await Runner.run(starting_agent=agent, input=input_list)
+
+    user_message = ChatMessage(
+        session_id=chat_session.id,
+        sender_type=SenderType.patient,
+        message_content=user_input.input,
+        message_sequence=(
+            previous_messages[-1].message_sequence + 1 if previous_messages else 1
+        ),
+    )
+    ai_message = ChatMessage(
+        session_id=chat_session.id,
+        sender_type=SenderType.patient,
+        message_content=user_input.input,
+        message_sequence=user_message.message_sequence + 1,
+    )
+
+    await chat_history_service.add_message(user_message)
+    await chat_history_service.add_message(ai_message)
 
     return response
 

@@ -89,7 +89,6 @@ CREATE TABLE doctor_unavailability (
 -- AI bot conversation sessions with patients
 CREATE TABLE chat_sessions (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    session_id VARCHAR(50) UNIQUE NOT NULL, -- external session identifier
     patient_id UUID REFERENCES patients(id) ON DELETE CASCADE,
     session_status VARCHAR(20) DEFAULT 'active' CHECK (session_status IN ('active', 'completed', 'abandoned')),
     started_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,

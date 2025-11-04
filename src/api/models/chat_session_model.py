@@ -40,9 +40,6 @@ def _now_utc() -> datetime:
 
 class ChatSession(BaseModel):
     id: UUID = Field(default_factory=uuid4)
-    session_id: str = Field(
-        ..., max_length=50, description="External session identifier"
-    )
     patient_id: UUID | None = Field(None, description="FK to patients.id")
     session_status: SessionStatus = Field(default=SessionStatus.active)
     started_at: datetime = Field(default_factory=_now_utc)
@@ -52,15 +49,8 @@ class ChatSession(BaseModel):
     appointment_requested: bool = Field(default=False)
     created_at: datetime = Field(default_factory=_now_utc)
 
-    @field_validator("session_id")
-    @classmethod
-    def session_id_not_empty(cls, v: str) -> str:
-        if not v or not v.strip():
-            raise ValueError("session_id must be a non-empty string")
-        return v
-
     class Config:
-        orm_mode = True
+        from_attributes = True
         use_enum_values = True
 
 

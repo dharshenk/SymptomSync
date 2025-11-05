@@ -18,9 +18,8 @@ CREATE TABLE patients (
     last_name VARCHAR(100) NOT NULL,
     email VARCHAR(255) UNIQUE,
     phone_number VARCHAR(20) UNIQUE NOT NULL,
-    whatsapp_number VARCHAR(20), -- for bot communication
     date_of_birth DATE,
-    gender VARCHAR(20) CHECK (gender IN ('male', 'female', 'other', 'prefer_not_to_say')),
+    gender VARCHAR(20) CHECK (gender IN ('male', 'female', 'prefer_not_to_say')),
     emergency_contact_name VARCHAR(100),
     emergency_contact_phone VARCHAR(20),
     is_active BOOLEAN DEFAULT true,

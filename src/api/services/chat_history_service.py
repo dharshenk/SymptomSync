@@ -13,13 +13,7 @@ class ChatHistoryService:
         insert_query = """
             INSERT INTO chat_sessions (
                 id,
-                patient_id,
-                session_status,
-                started_at,
-                completed_at,
-                total_messages,
-                session_summary,
-                appointment_requested
+                patient_id
             )
             VALUES (
                 %(id)s,

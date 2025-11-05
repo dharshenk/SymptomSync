@@ -1,10 +1,13 @@
 from api.models.IO_model import InputModel
+from api.models.patient_model import Patient
 from api.services.chat_history_service import ChatHistoryService
 from api.clients.postgres_sql_client import PostgresSQLClient, DatabaseConfig
 from api.models.chat_session_model import ChatMessage, SenderType
 from agents import Agent, Runner
 from agents.extensions.models.litellm_model import LitellmModel
 from dotenv import load_dotenv
+from api.services.patient_service import PatientService
+from uuid import UUID
 import asyncio
 import os
 
@@ -49,7 +52,6 @@ agent = Agent(
     model=LitellmModel(model="gemini/gemini-2.5-flash"),
     instructions="You're a helpful assistant. Who keeps it concise.",
 )
-
 database_config = DatabaseConfig(
     host=os.getenv("POSTGRES_HOST"),
     port=os.getenv("POSTGRES_PORT"),
@@ -58,24 +60,26 @@ database_config = DatabaseConfig(
     password=os.getenv("POSTGRES_PASSWORD"),
 )
 postgres_client = PostgresSQLClient(database_config)
+patient_service = PatientService(postgres_client)
 chat_history_service = ChatHistoryService(postgres_client)
 
 
 async def get_response(user_input: InputModel):
+    patient = await patient_service.get_patient_by_patient_id(
+        user_input.patient.patient_id
+    )
+    if not patient:
+        patient = await patient_service.create_patient(user_input.patient)
+
     chat_session = await chat_history_service.get_session(user_input.session_id)
     if not chat_session:
         chat_session = await chat_history_service.create_session(
-            user_input.session_id, user_input.patient_id
+            user_input.session_id, patient.id
         )
 
     previous_messages = await chat_history_service.get_session_messages(
         session_id=chat_session.id
     )
-
-    input_list = format_messages_for_runner(
-        user_question=user_input.input, previous_messages=previous_messages
-    )
-    response = await Runner.run(starting_agent=agent, input=input_list)
 
     user_message = ChatMessage(
         session_id=chat_session.id,
@@ -85,14 +89,22 @@ async def get_response(user_input: InputModel):
             previous_messages[-1].message_sequence + 1 if previous_messages else 1
         ),
     )
+    await chat_history_service.add_message(user_message)
+
+    input_list = format_messages_for_runner(
+        user_question=user_input.input, previous_messages=previous_messages
+    )
+
+    # running the agent
+    response = await Runner.run(starting_agent=agent, input=input_list)
+
     ai_message = ChatMessage(
         session_id=chat_session.id,
-        sender_type=SenderType.patient,
-        message_content=user_input.input,
+        sender_type=SenderType.bot,
+        message_content=response.final_output,
         message_sequence=user_message.message_sequence + 1,
     )
 
-    await chat_history_service.add_message(user_message)
     await chat_history_service.add_message(ai_message)
 
     return response
@@ -100,7 +112,16 @@ async def get_response(user_input: InputModel):
 
 if __name__ == "__main__":
     # Example input
-    user_input = InputModel(input="who is messi")
+    user_input = InputModel(
+        input="what's his former club",
+        patient=Patient(
+            patient_id="8795674356",
+            first_name="john",
+            last_name="doe",
+            phone_number="8795674356",
+        ),
+        session_id=UUID("6df362ea-10a5-48a3-9daa-38959166362a"),
+    )
 
     # Run the async get_response function
     response = asyncio.run(get_response(user_input))

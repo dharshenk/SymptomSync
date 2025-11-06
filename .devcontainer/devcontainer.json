@@ -2,6 +2,8 @@
   "name": "Python Dev Container",
   "image": "mcr.microsoft.com/devcontainers/python:3.11-bookworm",
   "postCreateCommand": "bash .devcontainer/post-create.sh",
+  "workspaceMount": "source=vsc-remote-containers,target=/workspaces/SymptomSync,type=volume",
+  "workspaceFolder": "/workspaces/SymptomSync",
   "features": {
     "ghcr.io/devcontainers/features/docker-outside-of-docker:1.6.5": {}
   },

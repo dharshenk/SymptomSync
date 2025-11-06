@@ -3,6 +3,7 @@ from api.clients.postgres_sql_client import PostgresSQLClient
 from api.models.patient_model import Patient
 from uuid import UUID
 import logging
+import json
 
 
 class PatientService:
@@ -16,6 +17,7 @@ class PatientService:
         """Insert a new patient record and return the created model."""
         insert_query = """
             INSERT INTO patients (
+                id,
                 patient_id,
                 first_name,
                 last_name,
@@ -28,6 +30,7 @@ class PatientService:
                 is_active
             )
             VALUES (
+                %(id)s,
                 %(patient_id)s,
                 %(first_name)s,
                 %(last_name)s,
@@ -42,7 +45,7 @@ class PatientService:
             RETURNING *;
         """
 
-        params = patient.model_dump()
+        params = json.loads(patient.model_dump_json())
         self._postgres_client.execute_command(insert_query, params)
 
         return patient

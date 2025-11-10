@@ -1,6 +1,16 @@
-version: '3.8'
-
 services:
+  app:
+    image: "mcr.microsoft.com/devcontainers/python:3.11-bookworm"
+    container_name: devcontainer
+    volumes:
+      - vsc-remote-containers:/workspaces
+    networks:
+      - symptom_sync_backend
+    command: sleep infinity
+    depends_on:
+      - postgres-db
+      - redis-db
+
   postgres-db:
     image: postgres:17.5-alpine3.22
     container_name: postgres-db
@@ -13,7 +23,7 @@ services:
     volumes:
       - pgdata:/var/lib/postgresql/data
     networks:
-      - symptomSync_backend
+      - symptom_sync_backend
     restart: unless-stopped
 
   redis-db:
@@ -25,12 +35,16 @@ services:
     volumes:
       - redisdata:/data
     networks:
-      - symptomSync_backend
+      - symptom_sync_backend
     restart: unless-stopped
 
 volumes:
   pgdata:
   redisdata:
+  vsc-remote-containers:
+    external: true
 
 networks:
-  symptomSync_backend:
+  symptom_sync_backend:
+    name: symptom_sync_backend
+    driver: bridge

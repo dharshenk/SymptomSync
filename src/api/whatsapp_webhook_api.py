@@ -1,5 +1,4 @@
 from api.models.IO_model import InputModel
-from api.models.patient_model import Patient
 from api.services.chat_history_service import ChatHistoryService
 from api.clients.postgres_sql_client import PostgresSQLClient, DatabaseConfig
 from api.models.chat_session_model import ChatMessage, SenderType
@@ -7,11 +6,12 @@ from agents import Agent, Runner
 from agents.extensions.models.litellm_model import LitellmModel
 from dotenv import load_dotenv
 from api.services.patient_service import PatientService
-from uuid import UUID
-import asyncio
 import os
+from fastapi import FastAPI
 
 load_dotenv()
+
+app = FastAPI()
 
 
 def format_messages_for_runner(
@@ -64,6 +64,7 @@ patient_service = PatientService(postgres_client)
 chat_history_service = ChatHistoryService(postgres_client)
 
 
+@app.post("/")
 async def get_response(user_input: InputModel):
     patient = await patient_service.get_patient_by_patient_id(
         user_input.patient.patient_id
@@ -107,23 +108,4 @@ async def get_response(user_input: InputModel):
 
     await chat_history_service.add_message(ai_message)
 
-    return response
-
-
-if __name__ == "__main__":
-    # Example input
-    user_input = InputModel(
-        input="what's his former club",
-        patient=Patient(
-            patient_id="8795674356",
-            first_name="john",
-            last_name="doe",
-            phone_number="8795674356",
-        ),
-        session_id=UUID("6df362ea-10a5-48a3-9daa-38959166362a"),
-    )
-
-    # Run the async get_response function
-    response = asyncio.run(get_response(user_input))
-
-    print("Assistant response:", response.final_output)
+    return response.final_output

@@ -1,3 +1,4 @@
+from typing import Annotated
 from api.models.IO_model import InputModel
 from api.services.chat_history_service import ChatHistoryService
 from api.clients.postgres_sql_client import PostgresSQLClient, DatabaseConfig
@@ -6,12 +7,64 @@ from agents import Agent, Runner
 from agents.extensions.models.litellm_model import LitellmModel
 from dotenv import load_dotenv
 from api.services.patient_service import PatientService
+from contextlib import asynccontextmanager
 import os
-from fastapi import FastAPI
+from fastapi import FastAPI, Depends
 
 load_dotenv()
 
-app = FastAPI()
+
+def get_database_config() -> DatabaseConfig:
+    return DatabaseConfig(
+        host=os.getenv("POSTGRES_HOST"),
+        port=os.getenv("POSTGRES_PORT"),
+        database=os.getenv("POSTGRES_DATABASE"),
+        username=os.getenv("POSTGRES_USER"),
+        password=os.getenv("POSTGRES_PASSWORD"),
+    )
+
+
+def get_postgres_client() -> PostgresSQLClient:
+    return app.state.postgres_client
+
+
+def get_agent() -> Agent:
+    return app.state.agent
+
+
+def get_patient_service(
+    postgres_client: Annotated[PostgresSQLClient, Depends(get_postgres_client)],
+) -> PatientService:
+    return PatientService(postgres_client)
+
+
+def get_chat_history_service(
+    postgres_client: Annotated[PostgresSQLClient, Depends(get_postgres_client)],
+) -> ChatHistoryService:
+    return ChatHistoryService(postgres_client)
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    database_config = get_database_config()
+    app.state.postgres_client = PostgresSQLClient(database_config)
+    app.state.agent = Agent(
+        name="assistant",
+        model=LitellmModel(model="gemini/gemini-2.5-flash"),
+        instructions="You're a helpful assistant. Who keeps it concise.",
+    )
+
+    yield
+
+    if app.state.postgres_client:
+        app.state.postgres_client.close()
+        app.state.postgres_client = None
+
+    if app.state.agent:
+        app.state.agent = None
+
+
+app = FastAPI(lifespan=lifespan)
 
 
 def format_messages_for_runner(
@@ -20,13 +73,6 @@ def format_messages_for_runner(
     """
     Build a chat message list for OpenAI's Runner.
     Always appends the current user question, and prepends previous messages if given.
-
-    Args:
-        user_question (str): The new user input.
-        previous_messages (list[ChatMessage] | None): Optional previous conversation.
-
-    Returns:
-        list[dict]: Messages formatted as [{"role": "user", "content": "..."}, ...].
     """
 
     sender_type_map = {"patient": "user", "bot": "assistant"}
@@ -47,25 +93,15 @@ def format_messages_for_runner(
     return messages
 
 
-agent = Agent(
-    name="assistant",
-    model=LitellmModel(model="gemini/gemini-2.5-flash"),
-    instructions="You're a helpful assistant. Who keeps it concise.",
-)
-database_config = DatabaseConfig(
-    host=os.getenv("POSTGRES_HOST"),
-    port=os.getenv("POSTGRES_PORT"),
-    database=os.getenv("POSTGRES_DATABASE"),
-    username=os.getenv("POSTGRES_USER"),
-    password=os.getenv("POSTGRES_PASSWORD"),
-)
-postgres_client = PostgresSQLClient(database_config)
-patient_service = PatientService(postgres_client)
-chat_history_service = ChatHistoryService(postgres_client)
-
-
 @app.post("/")
-async def get_response(user_input: InputModel):
+async def get_response(
+    user_input: InputModel,
+    patient_service: Annotated[PatientService, Depends(get_patient_service)],
+    chat_history_service: Annotated[
+        ChatHistoryService, Depends(get_chat_history_service)
+    ],
+    agent: Annotated[Agent, Depends(get_agent)],
+):
     patient = await patient_service.get_patient_by_patient_id(
         user_input.patient.patient_id
     )

@@ -1,13 +1,15 @@
 from typing import Annotated
-from api.models.IO_model import InputModel
+from api.models.IO_model import WhatsAppWebhookRequest
 from api.services.chat_history_service import ChatHistoryService
 from api.clients.postgres_sql_client import PostgresSQLClient
 from api.models.chat_session_model import ChatMessage, SenderType
+from api.models.patient_model import Patient
 from api.clients.whatsapp_client import WhatsAppClient, WhatsAppConfig
 from agents import Agent, Runner
 from dotenv import load_dotenv
 from api.services.patient_service import PatientService
 from fastapi import Depends, APIRouter, Request
+import uuid
 import os
 
 load_dotenv()
@@ -73,7 +75,8 @@ def format_messages_for_runner(
 
 @router.post("/")
 async def get_response(
-    user_input: InputModel,
+    # user_input: InputModel,
+    whatsapp_webhook_request: WhatsAppWebhookRequest,
     patient_service: Annotated[PatientService, Depends(get_patient_service)],
     chat_history_service: Annotated[
         ChatHistoryService, Depends(get_chat_history_service)
@@ -81,17 +84,19 @@ async def get_response(
     agent: Annotated[Agent, Depends(get_agent)],
     whatsapp_client: Annotated[WhatsAppClient, Depends(get_whatsapp_client)],
 ):
-    patient = await patient_service.get_patient_by_patient_id(
-        user_input.patient.patient_id
+    patient_id = whatsapp_webhook_request.entry[0].changes[0].value.messages[0].from_
+    session_id = uuid.uuid5(uuid.NAMESPACE_DNS, patient_id)
+    patient_message = (
+        whatsapp_webhook_request.entry[0].changes[0].value.messages[0].text.body
     )
-    if not patient:
-        patient = await patient_service.create_patient(user_input.patient)
 
-    chat_session = await chat_history_service.get_session(user_input.session_id)
+    patient = await patient_service.get_patient_by_patient_id(patient_id)
+    if not patient:
+        patient = await patient_service.create_patient(Patient(patient_id=patient_id))
+
+    chat_session = await chat_history_service.get_session(session_id)
     if not chat_session:
-        chat_session = await chat_history_service.create_session(
-            user_input.session_id, patient.id
-        )
+        chat_session = await chat_history_service.create_session(session_id, patient.id)
 
     previous_messages = await chat_history_service.get_session_messages(
         session_id=chat_session.id
@@ -100,7 +105,7 @@ async def get_response(
     user_message = ChatMessage(
         session_id=chat_session.id,
         sender_type=SenderType.patient,
-        message_content=user_input.input,
+        message_content=patient_message,  # Message.text.body
         message_sequence=(
             previous_messages[-1].message_sequence + 1 if previous_messages else 1
         ),
@@ -108,7 +113,7 @@ async def get_response(
     await chat_history_service.add_message(user_message)
 
     input_list = format_messages_for_runner(
-        user_question=user_input.input, previous_messages=previous_messages
+        user_question=patient_message, previous_messages=previous_messages
     )
 
     # running the agent

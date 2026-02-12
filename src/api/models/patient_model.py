@@ -18,10 +18,7 @@ def _now_utc() -> datetime:
 class Patient(BaseModel):
     id: UUID = Field(default_factory=uuid4)
     patient_id: str = Field(..., description="phone number")
-    first_name: str
-    last_name: str
     email: EmailStr | None = None
-    phone_number: str
     date_of_birth: date | None = None
     gender: Gender | None = None
     emergency_contact_name: str | None = None

@@ -1,35 +1,33 @@
 from typing import Annotated
 from api.models.IO_model import InputModel
 from api.services.chat_history_service import ChatHistoryService
-from api.clients.postgres_sql_client import PostgresSQLClient, DatabaseConfig
+from api.clients.postgres_sql_client import PostgresSQLClient
 from api.models.chat_session_model import ChatMessage, SenderType
+from api.clients.whatsapp_client import WhatsAppClient, WhatsAppConfig
 from agents import Agent, Runner
-from agents.extensions.models.litellm_model import LitellmModel
 from dotenv import load_dotenv
 from api.services.patient_service import PatientService
-from contextlib import asynccontextmanager
+from fastapi import Depends, APIRouter, Request
 import os
-from fastapi import FastAPI, Depends
 
 load_dotenv()
 
 
-def get_database_config() -> DatabaseConfig:
-    return DatabaseConfig(
-        host=os.getenv("POSTGRES_HOST"),
-        port=os.getenv("POSTGRES_PORT"),
-        database=os.getenv("POSTGRES_DATABASE"),
-        username=os.getenv("POSTGRES_USER"),
-        password=os.getenv("POSTGRES_PASSWORD"),
+def get_postgres_client(request: Request) -> PostgresSQLClient:
+    return request.app.state.postgres_client
+
+
+def get_agent(request: Request) -> Agent:
+    return request.app.state.agent
+
+
+def get_whatsapp_client():
+    return WhatsAppClient(
+        WhatsAppConfig(
+            access_token=os.getenv("WHATSAPP_ACCESS_TOKEN"),
+            phone_number_id=os.getenv("WHATSAPP_PHONE_NUMBER_ID"),
+        )
     )
-
-
-def get_postgres_client() -> PostgresSQLClient:
-    return app.state.postgres_client
-
-
-def get_agent() -> Agent:
-    return app.state.agent
 
 
 def get_patient_service(
@@ -44,27 +42,7 @@ def get_chat_history_service(
     return ChatHistoryService(postgres_client)
 
 
-@asynccontextmanager
-async def lifespan(app: FastAPI):
-    database_config = get_database_config()
-    app.state.postgres_client = PostgresSQLClient(database_config)
-    app.state.agent = Agent(
-        name="assistant",
-        model=LitellmModel(model="gemini/gemini-2.5-flash"),
-        instructions="You're a helpful assistant. Who keeps it concise.",
-    )
-
-    yield
-
-    if app.state.postgres_client:
-        app.state.postgres_client.close()
-        app.state.postgres_client = None
-
-    if app.state.agent:
-        app.state.agent = None
-
-
-app = FastAPI(lifespan=lifespan)
+router = APIRouter()
 
 
 def format_messages_for_runner(
@@ -93,7 +71,7 @@ def format_messages_for_runner(
     return messages
 
 
-@app.post("/")
+@router.post("/")
 async def get_response(
     user_input: InputModel,
     patient_service: Annotated[PatientService, Depends(get_patient_service)],
@@ -101,6 +79,7 @@ async def get_response(
         ChatHistoryService, Depends(get_chat_history_service)
     ],
     agent: Annotated[Agent, Depends(get_agent)],
+    whatsapp_client: Annotated[WhatsAppClient, Depends(get_whatsapp_client)],
 ):
     patient = await patient_service.get_patient_by_patient_id(
         user_input.patient.patient_id
@@ -143,5 +122,7 @@ async def get_response(
     )
 
     await chat_history_service.add_message(ai_message)
+
+    whatsapp_client.send_text_message(to="918610432661", message=response.final_output)
 
     return response.final_output

@@ -1,0 +1,14 @@
+[project]
+name = "symptom-sync"
+version = "0.1.0"
+description = "SymptomSync - AI-powered symptom tracking system"
+requires-python = ">=3.10"
+dependencies = [
+    "pre-commit",
+    "pip-tools",
+    "black",
+    "pytest",
+    "pytest-cov",
+    "python-dotenv",
+    "ruff",
+]

@@ -10,3 +10,4 @@ openai-agents
 openai-agents[litellm]
 pytest
 pydantic[email]
+fastapi

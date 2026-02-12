@@ -11,7 +11,7 @@ CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 -- =====================================================
 
 -- Patient details
-CREATE TABLE patients (
+CREATE TABLE if not exists patients (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     patient_id VARCHAR(20) UNIQUE NOT NULL, -- human-readable patient ID like PAT-001
     first_name VARCHAR(100) NOT NULL,
@@ -32,7 +32,7 @@ CREATE TABLE patients (
 -- =====================================================
 
 -- Doctor details
-CREATE TABLE doctors (
+CREATE TABLE if not exists doctors (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     doctor_id VARCHAR(20) UNIQUE NOT NULL, -- human-readable doctor ID like DOC-001
     first_name VARCHAR(100) NOT NULL,
@@ -57,7 +57,7 @@ CREATE TABLE doctors (
 -- =====================================================
 
 -- Doctor's weekly availability schedule
-CREATE TABLE doctor_availability (
+CREATE TABLE if not exists doctor_availability (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     doctor_id UUID REFERENCES doctors(id) ON DELETE CASCADE,
     day_of_week INTEGER CHECK (day_of_week BETWEEN 0 AND 6), -- 0=Sunday, 6=Saturday
@@ -71,7 +71,7 @@ CREATE TABLE doctor_availability (
 );
 
 -- Doctor unavailability (holidays, leaves, specific dates)
-CREATE TABLE doctor_unavailability (
+CREATE TABLE if not exists doctor_unavailability (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     doctor_id UUID REFERENCES doctors(id) ON DELETE CASCADE,
     unavailable_date DATE NOT NULL,
@@ -86,7 +86,7 @@ CREATE TABLE doctor_unavailability (
 -- =====================================================
 
 -- AI bot conversation sessions with patients
-CREATE TABLE chat_sessions (
+CREATE TABLE if not exists chat_sessions (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     patient_id UUID REFERENCES patients(id) ON DELETE CASCADE,
     session_status VARCHAR(20) DEFAULT 'active' CHECK (session_status IN ('active', 'completed', 'abandoned')),
@@ -99,7 +99,7 @@ CREATE TABLE chat_sessions (
 );
 
 -- Individual messages within chat sessions
-CREATE TABLE chat_messages (
+CREATE TABLE if not exists chat_messages (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     session_id UUID REFERENCES chat_sessions(id) ON DELETE CASCADE,
     message_sequence INTEGER NOT NULL, -- order of messages in session
@@ -118,7 +118,7 @@ CREATE TABLE chat_messages (
 -- =====================================================
 
 -- Appointments between patients and doctors
-CREATE TABLE appointments (
+CREATE TABLE if not exists appointments (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     appointment_number VARCHAR(20) UNIQUE NOT NULL, -- human-readable like APT-001
     patient_id UUID REFERENCES patients(id) ON DELETE CASCADE,
@@ -150,7 +150,7 @@ CREATE TABLE appointments (
 -- =====================================================
 
 -- System-wide configuration settings
-CREATE TABLE system_config (
+CREATE TABLE if not exists system_config (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     config_key VARCHAR(100) UNIQUE NOT NULL,
     config_value TEXT,
@@ -185,7 +185,7 @@ CREATE INDEX idx_doctor_unavailability_doctor_date ON doctor_unavailability(doct
 CREATE INDEX idx_chat_sessions_patient ON chat_sessions(patient_id);
 CREATE INDEX idx_chat_sessions_status ON chat_sessions(session_status);
 CREATE INDEX idx_chat_sessions_started ON chat_sessions(started_at);
-CREATE INDEX idx_chat_sessions_session_id ON chat_sessions(session_id);
+CREATE INDEX idx_chat_sessions_id ON chat_sessions(id);
 
 -- Chat message indexes
 CREATE INDEX idx_chat_messages_session ON chat_messages(session_id);

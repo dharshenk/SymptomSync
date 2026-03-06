@@ -1,3 +1,4 @@
+-- use this command to execute this script in the postgres container: docker exec -i <postgre_container_name> psql -U <username> -d <database> < /path/to/script.sql
 -- =====================================================
 -- Symptom Sync Simplified Database Schema
 -- PostgreSQL Database Design for AI-Assisted Healthcare

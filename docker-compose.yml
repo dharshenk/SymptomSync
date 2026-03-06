@@ -1,16 +1,6 @@
-services:
-  app:
-    image: "mcr.microsoft.com/devcontainers/python:3.11-bookworm"
-    container_name: devcontainer
-    volumes:
-      - vsc-remote-containers:/workspaces
-    networks:
-      - symptom_sync_backend
-    command: sleep infinity
-    depends_on:
-      - postgres-db
-      - redis-db
+version: '3.8'
 
+services:
   postgres-db:
     image: postgres:17.5-alpine3.22
     container_name: postgres-db
@@ -41,8 +31,6 @@ services:
 volumes:
   pgdata:
   redisdata:
-  vsc-remote-containers:
-    external: true
 
 networks:
   symptom_sync_backend:

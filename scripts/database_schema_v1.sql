@@ -14,7 +14,7 @@ CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 -- Patient details
 CREATE TABLE if not exists patients (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    patient_id VARCHAR(20) UNIQUE NOT NULL, -- human-readable patient ID like PAT-001
+    patient_ph_no VARCHAR(20) UNIQUE NOT NULL, -- human-readable patient phone number
     first_name VARCHAR(100) NOT NULL,
     last_name VARCHAR(100) NOT NULL,
     email VARCHAR(255) UNIQUE,
@@ -166,8 +166,7 @@ CREATE TABLE if not exists system_config (
 
 -- Patient indexes
 CREATE INDEX idx_patients_email ON patients(email);
-CREATE INDEX idx_patients_phone ON patients(phone_number);
-CREATE INDEX idx_patients_patient_id ON patients(patient_id);
+CREATE INDEX idx_patients_patient_ph_no ON patients(patient_ph_no);
 CREATE INDEX idx_patients_active ON patients(is_active);
 
 -- Doctor indexes

@@ -18,7 +18,7 @@ class PatientService:
         insert_query = """
             INSERT INTO patients (
                 id,
-                patient_id,
+                patient_ph_no,
                 first_name,
                 last_name,
                 email,
@@ -31,7 +31,7 @@ class PatientService:
             )
             VALUES (
                 %(id)s,
-                %(patient_id)s,
+                %(patient_ph_no)s,
                 %(first_name)s,
                 %(last_name)s,
                 %(email)s,
@@ -62,11 +62,11 @@ class PatientService:
 
         return Patient(**rows[0])
 
-    async def get_patient_by_patient_id(self, patient_id: str) -> Patient | None:
-        """Fetch a patient by human-readable ID like PAT-001."""
-        select_query = "SELECT * FROM patients WHERE patient_id = %(patient_id)s;"
+    async def get_patient_by_patient_ph_no(self, patient_ph_no: str) -> Patient | None:
+        """Fetch a patient by phone number using the patient_ph_no field."""
+        select_query = "SELECT * FROM patients WHERE patient_ph_no = %(patient_ph_no)s;"
         rows = self._postgres_client.execute_query(
-            select_query, {"patient_id": patient_id}, fetch="one"
+            select_query, {"patient_ph_no": patient_ph_no}, fetch="one"
         )
 
         if not rows:

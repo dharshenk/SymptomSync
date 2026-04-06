@@ -84,15 +84,17 @@ async def get_response(
     agent: Annotated[Agent, Depends(get_agent)],
     whatsapp_client: Annotated[WhatsAppClient, Depends(get_whatsapp_client)],
 ):
-    patient_id = whatsapp_webhook_request.entry[0].changes[0].value.messages[0].from_
-    session_id = uuid.uuid5(uuid.NAMESPACE_DNS, patient_id)
+    patient_ph_no = whatsapp_webhook_request.entry[0].changes[0].value.messages[0].from_
+    session_id = uuid.uuid5(uuid.NAMESPACE_DNS, patient_ph_no)
     patient_message = (
         whatsapp_webhook_request.entry[0].changes[0].value.messages[0].text.body
     )
 
-    patient = await patient_service.get_patient_by_patient_id(patient_id)
+    patient = await patient_service.get_patient_by_patient_ph_no(patient_ph_no)
     if not patient:
-        patient = await patient_service.create_patient(Patient(patient_id=patient_id))
+        patient = await patient_service.create_patient(
+            Patient(patient_ph_no=patient_ph_no)
+        )
 
     chat_session = await chat_history_service.get_session(session_id)
     if not chat_session:

@@ -15,10 +15,9 @@ CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 CREATE TABLE if not exists patients (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     patient_ph_no VARCHAR(20) UNIQUE NOT NULL, -- human-readable patient phone number
-    first_name VARCHAR(100) NOT NULL,
-    last_name VARCHAR(100) NOT NULL,
+    first_name VARCHAR(100),
+    last_name VARCHAR(100),
     email VARCHAR(255) UNIQUE,
-    phone_number VARCHAR(20) UNIQUE NOT NULL,
     date_of_birth DATE,
     gender VARCHAR(20) CHECK (gender IN ('male', 'female', 'prefer_not_to_say')),
     emergency_contact_name VARCHAR(100),

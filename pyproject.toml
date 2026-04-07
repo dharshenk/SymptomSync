@@ -24,7 +24,7 @@ dependencies = [
     "pre-commit>=4.5.1",
 ]
 
-[dependency-group]
+[dependency-groups]
 dev = [
     "pre-commit",
     "pip-tools",

@@ -1,9 +1,31 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
 [project]
 name = "symptom-sync"
 version = "0.1.0"
 description = "SymptomSync - AI-powered symptom tracking system"
 requires-python = ">=3.10"
 dependencies = [
+    "redis",
+    "pydantic",
+    "backoff",
+    "httpx",
+    "httpx[http2]",
+    "requests",
+    "types-requests",
+    "psycopg2",
+    "openai-agents",
+    "openai-agents[litellm]",
+    "pydantic[email]",
+    "fastapi",
+    "pytest-asyncio>=1.3.0",
+    "pre-commit>=4.5.1",
+]
+
+[dependency-group]
+dev = [
     "pre-commit",
     "pip-tools",
     "black",
@@ -11,4 +33,9 @@ dependencies = [
     "pytest-cov",
     "python-dotenv",
     "ruff",
+    "pytest",
+    "pytest-cov",
 ]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src"]

@@ -1,5 +1,7 @@
 import pytest
 from collections.abc import Generator
+import os
+from dotenv import load_dotenv
 
 from api.clients.postgres_sql_client import (
     PostgresSQLClient,
@@ -7,12 +9,14 @@ from api.clients.postgres_sql_client import (
     DatabaseError,
 )
 
+load_dotenv()
+
 
 @pytest.fixture(scope="session")
 def db_config() -> DatabaseConfig:
     return DatabaseConfig(
-        host="postgres-db",
-        port=5432,
+        host=os.getenv("POSTGRES_HOST"),
+        port=os.getenv("POSTGRES_PORT"),
         username="test_user",
         password="test_password",  # pragma: allowlist secret
         database="test_db",

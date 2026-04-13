@@ -15,7 +15,7 @@ dependencies = [
     "httpx[http2]",
     "requests",
     "types-requests",
-    "psycopg2",
+    "psycopg2-binary",
     "openai-agents",
     "openai-agents[litellm]",
     "pydantic[email]",

@@ -29,6 +29,6 @@ class Patient(BaseModel):
     created_at: datetime = Field(default_factory=_now_utc)
     updated_at: datetime = Field(default_factory=_now_utc)
 
-    class Config:
+    class ConfigDict:
         from_attributes = True
         use_enum_values = True

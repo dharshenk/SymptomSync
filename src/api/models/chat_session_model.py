@@ -49,7 +49,7 @@ class ChatSession(BaseModel):
     appointment_requested: bool = Field(default=False)
     created_at: datetime = Field(default_factory=_now_utc)
 
-    class Config:
+    class ConfigDict:
         from_attributes = True
         use_enum_values = True
 
@@ -78,6 +78,6 @@ class ChatMessage(BaseModel):
             raise ValueError("message_content must be a non-empty string")
         return v
 
-    class Config:
+    class ConfigDict:
         from_attributes = True
         use_enum_values = True

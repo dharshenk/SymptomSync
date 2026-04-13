@@ -14,6 +14,8 @@ import os
 
 load_dotenv()
 
+SYSTEM_PROMPT_PATH = os.getenv("SYSTEM_PROMPT_PATH")
+
 
 def get_postgres_client(request: Request) -> PostgresSQLClient:
     return request.app.state.postgres_client
@@ -48,7 +50,9 @@ router = APIRouter()
 
 
 def format_messages_for_runner(
-    user_question: str, previous_messages: list["ChatMessage"] | None = None
+    user_question: str,
+    system_prompt: str,
+    previous_messages: list["ChatMessage"] | None = None,
 ) -> list[dict]:
     """
     Build a chat message list for OpenAI's Runner.
@@ -57,7 +61,12 @@ def format_messages_for_runner(
 
     sender_type_map = {"patient": "user", "bot": "assistant"}
 
-    messages: list[dict] = []
+    messages: list[dict] = [
+        {
+            "role": "system",
+            "content": system_prompt,
+        }
+    ]
 
     if previous_messages:
         messages.extend(
@@ -114,8 +123,13 @@ async def get_response(
     )
     await chat_history_service.add_message(user_message)
 
+    with open(SYSTEM_PROMPT_PATH) as fp:
+        system_prompt = fp.read()
+
     input_list = format_messages_for_runner(
-        user_question=patient_message, previous_messages=previous_messages
+        user_question=patient_message,
+        previous_messages=previous_messages,
+        system_prompt=system_prompt,
     )
 
     # running the agent

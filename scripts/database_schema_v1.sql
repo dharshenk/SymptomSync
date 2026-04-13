@@ -119,7 +119,7 @@ CREATE TABLE if not exists chat_messages (
 -- Appointments between patients and doctors
 CREATE TABLE if not exists appointments (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    appointment_number VARCHAR(20) UNIQUE NOT NULL, -- human-readable like APT-001
+    appointment_number VARCHAR(30) UNIQUE NOT NULL, -- human-readable like APT-001
     patient_id UUID REFERENCES patients(id) ON DELETE CASCADE,
     doctor_id UUID REFERENCES doctors(id) ON DELETE CASCADE,
     chat_session_id UUID REFERENCES chat_sessions(id), -- link to originating chat session

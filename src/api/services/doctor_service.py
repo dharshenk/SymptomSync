@@ -13,15 +13,18 @@ class DoctorService:
         self._postgres_client = postgres_client
         self._logger = logging.getLogger(__name__)
 
-    async def create_doctor(self, doctor: Doctor) -> Doctor | None:
+    async def create_doctor(self, doctor: Doctor) -> bool:
         """
-        Insert a new doctor record and return the created model.
+        Insert a new doctor record.
 
         Args:
             doctor: Doctor model with required fields
 
         Returns:
-            Created Doctor model or None if failed
+            True if the doctor was created successfully, False if no row was affected.
+
+        Raises:
+            DatabaseError: Re-raised from the postgres client on query failure.
         """
         insert_query = """
             INSERT INTO doctors (
@@ -55,24 +58,18 @@ class DoctorService:
                 %(consultation_duration)s,
                 %(bio)s,
                 %(is_active)s
-            )
-            RETURNING *;
+            );
         """
 
         params = json.loads(doctor.model_dump_json())
         params["id"] = str(params["id"])
 
         try:
-            rows = self._postgres_client.execute_query(
-                insert_query, params, fetch="one"
-            )
-            if not rows:
-                self._logger.error("Failed to insert doctor")
-                return None
-            return Doctor(**rows[0])
+            rowcount = self._postgres_client.execute_command(insert_query, params)
+            return rowcount > 0
         except Exception as e:
             self._logger.error(f"Error creating doctor: {str(e)}")
-            return None
+            raise
 
     async def get_doctor(self, doctor_id: UUID) -> Doctor | None:
         """
@@ -116,7 +113,7 @@ class DoctorService:
 
         return Doctor(**rows[0])
 
-    async def update_doctor(self, doctor_id: UUID, updates: dict) -> Doctor | None:
+    async def update_doctor(self, doctor_id: UUID, updates: dict) -> bool:
         """
         Update doctor record with provided fields.
 
@@ -125,11 +122,14 @@ class DoctorService:
             updates: Dictionary of fields to update
 
         Returns:
-            Updated Doctor model or None if failed
+            True if the doctor was updated, False if no updates provided or ID not found.
+
+        Raises:
+            DatabaseError: Re-raised from the postgres client on query failure.
         """
         if not updates:
             self._logger.warning("No updates provided")
-            return None
+            return False
 
         # Build dynamic SET clause
         set_clauses = [f"{k} = %({k})s" for k in updates.keys()]
@@ -139,23 +139,20 @@ class DoctorService:
             UPDATE doctors
             SET {set_clause},
                 updated_at = CURRENT_TIMESTAMP
-            WHERE id = %(doctor_id)s
-            RETURNING *;
+            WHERE id = %(doctor_id)s;
         """
 
         params = {**updates, "doctor_id": str(doctor_id)}
 
         try:
-            rows = self._postgres_client.execute_query(
-                update_query, params, fetch="one"
-            )
-            if not rows:
-                self._logger.warning(f"Doctor {doctor_id} not found")
-                return None
-            return Doctor(**rows[0])
+            rowcount = self._postgres_client.execute_command(update_query, params)
+            if rowcount == 0:
+                self._logger.warning(f"Doctor {doctor_id} not found for update")
+                return False
+            return True
         except Exception as e:
             self._logger.error(f"Error updating doctor: {str(e)}")
-            return None
+            raise
 
     async def delete_doctor(self, doctor_id: UUID) -> bool:
         """
@@ -165,7 +162,10 @@ class DoctorService:
             doctor_id: UUID of the doctor to delete
 
         Returns:
-            True if successful, False otherwise
+            True if the doctor was deleted, False if the ID was not found.
+
+        Raises:
+            DatabaseError: Re-raised from the postgres client on query failure.
         """
         delete_query = "DELETE FROM doctors WHERE id = %(doctor_id)s;"
         params = {"doctor_id": str(doctor_id)}
@@ -175,14 +175,13 @@ class DoctorService:
             if rowcount > 0:
                 self._logger.info(f"Doctor {doctor_id} deleted successfully")
                 return True
-            else:
-                self._logger.warning(f"Doctor {doctor_id} not found")
-                return False
+            self._logger.warning(f"Doctor {doctor_id} not found for deletion")
+            return False
         except Exception as e:
             self._logger.error(f"Error deleting doctor: {str(e)}")
-            return False
+            raise
 
-    async def deactivate_doctor(self, doctor_id: UUID) -> Doctor | None:
+    async def deactivate_doctor(self, doctor_id: UUID) -> bool:
         """
         Deactivate a doctor by setting is_active to False (soft delete).
 
@@ -190,29 +189,29 @@ class DoctorService:
             doctor_id: UUID of the doctor to deactivate
 
         Returns:
-            Updated Doctor model or None if failed
+            True if the doctor was deactivated, False if the ID was not found.
+
+        Raises:
+            DatabaseError: Re-raised from the postgres client on query failure.
         """
         update_query = """
             UPDATE doctors
             SET is_active = FALSE,
                 updated_at = CURRENT_TIMESTAMP
-            WHERE id = %(doctor_id)s
-            RETURNING *;
+            WHERE id = %(doctor_id)s;
         """
         params = {"doctor_id": str(doctor_id)}
 
         try:
-            rows = self._postgres_client.execute_query(
-                update_query, params, fetch="one"
-            )
-            if not rows:
-                self._logger.warning(f"Doctor {doctor_id} not found")
-                return None
+            rowcount = self._postgres_client.execute_command(update_query, params)
+            if rowcount == 0:
+                self._logger.warning(f"Doctor {doctor_id} not found for deactivation")
+                return False
             self._logger.info(f"Doctor {doctor_id} deactivated")
-            return Doctor(**rows[0])
+            return True
         except Exception as e:
             self._logger.error(f"Error deactivating doctor: {str(e)}")
-            return None
+            raise
 
     async def list_doctors(
         self,

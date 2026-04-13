@@ -57,7 +57,7 @@ class AppointmentService:
             self._logger.error(f"Error fetching available slots: {str(e)}")
             return None
 
-    async def book_appointment(self, appointment: Appointment) -> Appointment | None:
+    async def book_appointment(self, appointment: Appointment) -> bool:
         """
         Book a new appointment and generate appointment_number automatically.
 
@@ -65,7 +65,10 @@ class AppointmentService:
             appointment: Appointment model with required fields (appointment_date, start_time, end_time)
 
         Returns:
-            Created Appointment with appointment_number, or None if failed
+            True if the appointment was booked successfully, False if no row was affected.
+
+        Raises:
+            DatabaseError: Re-raised from the postgres client on query failure.
         """
         # Generate appointment number from the appointment_date and start_time
         appointment.appointment_number = self._generate_appointment_number(
@@ -102,8 +105,7 @@ class AppointmentService:
                 %(consultation_fee)s,
                 %(payment_status)s,
                 %(patient_notes)s
-            )
-            RETURNING *;
+            );
         """
 
         params = json.loads(appointment.model_dump_json())
@@ -114,16 +116,11 @@ class AppointmentService:
             params["chat_session_id"] = str(params["chat_session_id"])
 
         try:
-            rows = self._postgres_client.execute_query(
-                insert_query, params, fetch="one"
-            )
-            if not rows:
-                self._logger.error("Failed to insert appointment")
-                return None
-            return Appointment(**rows[0])
+            rowcount = self._postgres_client.execute_command(insert_query, params)
+            return rowcount > 0
         except Exception as e:
             self._logger.error(f"Error booking appointment: {str(e)}")
-            return None
+            raise
 
     async def cancel_appointment(
         self, appointment_id: UUID, reason: str | None = None
@@ -136,15 +133,17 @@ class AppointmentService:
             reason: Optional cancellation reason
 
         Returns:
-            True if successful, False otherwise
+            True if the appointment was cancelled, False if the ID was not found.
+
+        Raises:
+            DatabaseError: Re-raised from the postgres client on query failure.
         """
         update_query = """
             UPDATE appointments
             SET status = %(status)s,
                 cancellation_reason = %(reason)s,
                 updated_at = CURRENT_TIMESTAMP
-            WHERE id = %(appointment_id)s
-            RETURNING id;
+            WHERE id = %(appointment_id)s;
         """
         params = {
             "appointment_id": str(appointment_id),
@@ -155,16 +154,13 @@ class AppointmentService:
         try:
             rowcount = self._postgres_client.execute_command(update_query, params)
             if rowcount > 0:
-                self._logger.info(
-                    f"Appointment {appointment_id} cancelled successfully"
-                )
+                self._logger.info(f"Appointment {appointment_id} cancelled successfully")
                 return True
-            else:
-                self._logger.warning(f"Appointment {appointment_id} not found")
-                return False
+            self._logger.warning(f"Appointment {appointment_id} not found for cancellation")
+            return False
         except Exception as e:
             self._logger.error(f"Error cancelling appointment: {str(e)}")
-            return False
+            raise
 
     async def get_appointment(self, appointment_id: UUID) -> Appointment | None:
         """
@@ -258,7 +254,7 @@ class AppointmentService:
 
     async def update_appointment_status(
         self, appointment_id: UUID, new_status: AppointmentStatus
-    ) -> Appointment | None:
+    ) -> bool:
         """
         Update the status of an appointment.
 
@@ -267,14 +263,16 @@ class AppointmentService:
             new_status: New AppointmentStatus value
 
         Returns:
-            Updated Appointment model or None if failed
+            True if the status was updated, False if the ID was not found.
+
+        Raises:
+            DatabaseError: Re-raised from the postgres client on query failure.
         """
         update_query = """
             UPDATE appointments
             SET status = %(status)s,
                 updated_at = CURRENT_TIMESTAMP
-            WHERE id = %(appointment_id)s
-            RETURNING *;
+            WHERE id = %(appointment_id)s;
         """
         params = {
             "appointment_id": str(appointment_id),
@@ -282,16 +280,14 @@ class AppointmentService:
         }
 
         try:
-            rows = self._postgres_client.execute_query(
-                update_query, params, fetch="one"
-            )
-            if not rows:
-                self._logger.warning(f"Appointment {appointment_id} not found")
-                return None
-            return Appointment(**rows[0])
+            rowcount = self._postgres_client.execute_command(update_query, params)
+            if rowcount == 0:
+                self._logger.warning(f"Appointment {appointment_id} not found for status update")
+                return False
+            return True
         except Exception as e:
             self._logger.error(f"Error updating appointment status: {str(e)}")
-            return None
+            raise
 
     async def reschedule_appointment(
         self,
@@ -299,7 +295,7 @@ class AppointmentService:
         new_appointment_date: date,
         new_start_time: time,
         new_end_time: time,
-    ) -> Appointment | None:
+    ) -> bool:
         """
         Reschedule an appointment to a new date/time.
 
@@ -310,7 +306,10 @@ class AppointmentService:
             new_end_time: New end time
 
         Returns:
-            Updated Appointment model or None if failed
+            True if the appointment was rescheduled, False if the ID was not found.
+
+        Raises:
+            DatabaseError: Re-raised from the postgres client on query failure.
         """
         # Generate new appointment number for rescheduled appointment
         new_appointment_number = self._generate_appointment_number(
@@ -325,8 +324,7 @@ class AppointmentService:
                 appointment_number = %(appointment_number)s,
                 status = %(status)s,
                 updated_at = CURRENT_TIMESTAMP
-            WHERE id = %(appointment_id)s
-            RETURNING *;
+            WHERE id = %(appointment_id)s;
         """
         params = {
             "appointment_id": str(appointment_id),
@@ -338,20 +336,18 @@ class AppointmentService:
         }
 
         try:
-            rows = self._postgres_client.execute_query(
-                update_query, params, fetch="one"
-            )
-            if not rows:
-                self._logger.warning(f"Appointment {appointment_id} not found")
-                return None
-            return Appointment(**rows[0])
+            rowcount = self._postgres_client.execute_command(update_query, params)
+            if rowcount == 0:
+                self._logger.warning(f"Appointment {appointment_id} not found for rescheduling")
+                return False
+            return True
         except Exception as e:
             self._logger.error(f"Error rescheduling appointment: {str(e)}")
-            return None
+            raise
 
     async def add_doctor_notes(
         self, appointment_id: UUID, notes: str
-    ) -> Appointment | None:
+    ) -> bool:
         """
         Add doctor notes to an appointment after consultation.
 
@@ -360,14 +356,16 @@ class AppointmentService:
             notes: Doctor notes to add
 
         Returns:
-            Updated Appointment model or None if failed
+            True if notes were saved, False if the ID was not found.
+
+        Raises:
+            DatabaseError: Re-raised from the postgres client on query failure.
         """
         update_query = """
             UPDATE appointments
             SET doctor_notes = %(notes)s,
                 updated_at = CURRENT_TIMESTAMP
-            WHERE id = %(appointment_id)s
-            RETURNING *;
+            WHERE id = %(appointment_id)s;
         """
         params = {
             "appointment_id": str(appointment_id),
@@ -375,16 +373,14 @@ class AppointmentService:
         }
 
         try:
-            rows = self._postgres_client.execute_query(
-                update_query, params, fetch="one"
-            )
-            if not rows:
-                self._logger.warning(f"Appointment {appointment_id} not found")
-                return None
-            return Appointment(**rows[0])
+            rowcount = self._postgres_client.execute_command(update_query, params)
+            if rowcount == 0:
+                self._logger.warning(f"Appointment {appointment_id} not found for adding notes")
+                return False
+            return True
         except Exception as e:
             self._logger.error(f"Error adding doctor notes: {str(e)}")
-            return None
+            raise
 
     async def get_appointments_by_status(
         self, status: AppointmentStatus, limit: int = 50, offset: int = 0

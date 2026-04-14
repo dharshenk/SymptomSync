@@ -66,8 +66,10 @@ class TestPatientServiceCreate:
                 "DELETE FROM patients WHERE id = %(id)s;", {"id": pid}
             )
 
-    async def test_create_patient_returns_true(self, patient_service: PatientService):
-        """Successful insert returns True."""
+    async def test_create_patient_returns_patient(
+        self, patient_service: PatientService
+    ):
+        """Successful insert returns created Patient instance."""
         patient = Patient(
             patient_ph_no="+19990000001",
             first_name="Create",
@@ -77,7 +79,7 @@ class TestPatientServiceCreate:
         self._created_ids.append(str(patient.id))
 
         result = await patient_service.create_patient(patient)
-        assert result is True
+        assert isinstance(result, Patient)
 
     async def test_create_patient_persists_in_db(self, patient_service: PatientService):
         """Record is retrievable after creation."""

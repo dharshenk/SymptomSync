@@ -32,7 +32,7 @@ class AppointmentService:
         return f"APT-{date_str}-{time_str}-{random_suffix}"
 
     async def get_available_slots(
-        self, doctor_id: UUID, appointment_date: str
+        self, doctor_id: UUID, appointment_date: date
     ) -> list[dict] | None:
         """
         Get available slots for a doctor on a specific date using the PostgreSQL function.
@@ -154,9 +154,13 @@ class AppointmentService:
         try:
             rowcount = self._postgres_client.execute_command(update_query, params)
             if rowcount > 0:
-                self._logger.info(f"Appointment {appointment_id} cancelled successfully")
+                self._logger.info(
+                    f"Appointment {appointment_id} cancelled successfully"
+                )
                 return True
-            self._logger.warning(f"Appointment {appointment_id} not found for cancellation")
+            self._logger.warning(
+                f"Appointment {appointment_id} not found for cancellation"
+            )
             return False
         except Exception as e:
             self._logger.error(f"Error cancelling appointment: {str(e)}")
@@ -282,7 +286,9 @@ class AppointmentService:
         try:
             rowcount = self._postgres_client.execute_command(update_query, params)
             if rowcount == 0:
-                self._logger.warning(f"Appointment {appointment_id} not found for status update")
+                self._logger.warning(
+                    f"Appointment {appointment_id} not found for status update"
+                )
                 return False
             return True
         except Exception as e:
@@ -338,16 +344,16 @@ class AppointmentService:
         try:
             rowcount = self._postgres_client.execute_command(update_query, params)
             if rowcount == 0:
-                self._logger.warning(f"Appointment {appointment_id} not found for rescheduling")
+                self._logger.warning(
+                    f"Appointment {appointment_id} not found for rescheduling"
+                )
                 return False
             return True
         except Exception as e:
             self._logger.error(f"Error rescheduling appointment: {str(e)}")
             raise
 
-    async def add_doctor_notes(
-        self, appointment_id: UUID, notes: str
-    ) -> bool:
+    async def add_doctor_notes(self, appointment_id: UUID, notes: str) -> bool:
         """
         Add doctor notes to an appointment after consultation.
 
@@ -375,7 +381,9 @@ class AppointmentService:
         try:
             rowcount = self._postgres_client.execute_command(update_query, params)
             if rowcount == 0:
-                self._logger.warning(f"Appointment {appointment_id} not found for adding notes")
+                self._logger.warning(
+                    f"Appointment {appointment_id} not found for adding notes"
+                )
                 return False
             return True
         except Exception as e:

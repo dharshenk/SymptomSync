@@ -20,8 +20,8 @@ dependencies = [
     "openai-agents[litellm]",
     "pydantic[email]",
     "fastapi",
-    "pytest-asyncio>=1.3.0",
     "pre-commit>=4.5.1",
+    "reportlab>=4.4.10",
 ]
 
 [dependency-groups]
@@ -35,6 +35,7 @@ dev = [
     "ruff",
     "pytest",
     "pytest-cov",
+    "pytest-asyncio>=1.3.0",
 ]
 
 [tool.hatch.build.targets.wheel]

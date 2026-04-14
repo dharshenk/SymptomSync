@@ -1,4 +1,5 @@
 from typing import Annotated
+from jinja2 import Template
 from api.models.IO_model import WhatsAppWebhookRequest
 from api.services.chat_history_service import ChatHistoryService
 from api.services.appointment_service import AppointmentService
@@ -13,6 +14,7 @@ from api.services.patient_service import PatientService
 from fastapi import Depends, APIRouter, Request
 import uuid
 import os
+from datetime import date
 
 load_dotenv()
 
@@ -90,6 +92,17 @@ def format_messages_for_runner(
     return messages
 
 
+def get_system_prompt():
+    with open(SYSTEM_PROMPT_PATH) as fp:
+        raw_prompt_text = fp.read()
+
+    template = Template(raw_prompt_text)
+    today_str = date.today().strftime("%A, %B %d, %Y")
+    system_prompt = template.render(current_date=today_str)
+
+    return system_prompt
+
+
 @router.post("/")
 async def get_response(
     # user_input: InputModel,
@@ -134,8 +147,7 @@ async def get_response(
     )
     await chat_history_service.add_message(user_message)
 
-    with open(SYSTEM_PROMPT_PATH) as fp:
-        system_prompt = fp.read()
+    system_prompt = get_system_prompt()
 
     input_list = format_messages_for_runner(
         user_question=patient_message,
@@ -147,6 +159,7 @@ async def get_response(
         patient_id=patient.id,
         chat_session_id=chat_session.id,
         appointment_service=appointment_service,
+        doctor_id=uuid.UUID("11111111-1111-1111-1111-111111111111"),
     )
 
     # running the agent
@@ -163,6 +176,6 @@ async def get_response(
 
     await chat_history_service.add_message(ai_message)
 
-    whatsapp_client.send_text_message(to="918610432661", message=response.final_output)
+    # whatsapp_client.send_text_message(to="918610432661", message=response.final_output)
 
     return response.final_output

@@ -6,6 +6,7 @@ import os
 
 from api.clients.postgres_sql_client import PostgresSQLClient, DatabaseConfig
 from api.whatsapp_webhook_api import router as WhatsappRouter
+from api.services.function_tool_service import book_appointment, generate_patient_report
 
 
 def get_database_config() -> DatabaseConfig:
@@ -25,7 +26,7 @@ async def lifespan(app: FastAPI):
     app.state.agent = Agent(
         name="assistant",
         model=LitellmModel(model="gemini/gemini-2.5-flash"),
-        instructions="You're a helpful assistant. Who keeps it concise.",
+        tools=[book_appointment, generate_patient_report],
     )
 
     yield

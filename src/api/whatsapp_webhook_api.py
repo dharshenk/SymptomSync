@@ -1,6 +1,8 @@
 from typing import Annotated
 from api.models.IO_model import WhatsAppWebhookRequest
 from api.services.chat_history_service import ChatHistoryService
+from api.services.appointment_service import AppointmentService
+from api.services.function_tool_service import ToolContext
 from api.clients.postgres_sql_client import PostgresSQLClient
 from api.models.chat_session_model import ChatMessage, SenderType
 from api.models.patient_model import Patient
@@ -44,6 +46,12 @@ def get_chat_history_service(
     postgres_client: Annotated[PostgresSQLClient, Depends(get_postgres_client)],
 ) -> ChatHistoryService:
     return ChatHistoryService(postgres_client)
+
+
+def get_appointment_service(
+    postgres_client: Annotated[PostgresSQLClient, Depends(get_postgres_client)],
+) -> AppointmentService:
+    return AppointmentService(postgres_client)
 
 
 router = APIRouter()
@@ -92,6 +100,9 @@ async def get_response(
     ],
     agent: Annotated[Agent, Depends(get_agent)],
     whatsapp_client: Annotated[WhatsAppClient, Depends(get_whatsapp_client)],
+    appointment_service: Annotated[
+        AppointmentService, Depends(get_appointment_service)
+    ],
 ):
     patient_ph_no = whatsapp_webhook_request.entry[0].changes[0].value.messages[0].from_
     session_id = uuid.uuid5(uuid.NAMESPACE_DNS, patient_ph_no)
@@ -132,8 +143,16 @@ async def get_response(
         system_prompt=system_prompt,
     )
 
+    tool_context = ToolContext(
+        patient_id=patient.id,
+        chat_session_id=chat_session.id,
+        appointment_service=appointment_service,
+    )
+
     # running the agent
-    response = await Runner.run(starting_agent=agent, input=input_list)
+    response = await Runner.run(
+        starting_agent=agent, input=input_list, context=tool_context
+    )
 
     ai_message = ChatMessage(
         session_id=chat_session.id,

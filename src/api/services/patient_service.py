@@ -13,7 +13,7 @@ class PatientService:
         self._postgres_client = postgres_client
         self._logger = logging.getLogger(__name__)
 
-    async def create_patient(self, patient: Patient) -> bool:
+    async def create_patient(self, patient: Patient) -> Patient:
         """Insert a new patient record.
 
         Returns:
@@ -51,8 +51,8 @@ class PatientService:
 
         try:
             params = json.loads(patient.model_dump_json())
-            rowcount = self._postgres_client.execute_command(insert_query, params)
-            return rowcount > 0
+            self._postgres_client.execute_command(insert_query, params)
+            return patient
         except Exception as e:
             self._logger.error(f"Error creating patient: {str(e)}")
             raise
@@ -122,7 +122,9 @@ class PatientService:
         """
         try:
             query = "DELETE FROM patients WHERE id = %(id)s;"
-            rowcount = self._postgres_client.execute_command(query, {"id": str(patient_id)})
+            rowcount = self._postgres_client.execute_command(
+                query, {"id": str(patient_id)}
+            )
             if rowcount == 0:
                 self._logger.warning(f"Patient {patient_id} not found for deletion")
                 return False

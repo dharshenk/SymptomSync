@@ -169,7 +169,6 @@ CREATE INDEX idx_patients_active ON patients(is_active);
 
 -- Doctor indexes
 CREATE INDEX idx_doctors_email ON doctors(email);
-CREATE INDEX idx_doctors_doctor_id ON doctors(doctor_id);
 CREATE INDEX idx_doctors_specialization ON doctors(specialization);
 CREATE INDEX idx_doctors_active ON doctors(is_active);
 

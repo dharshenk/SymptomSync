@@ -1,6 +1,6 @@
 from pydantic import BaseModel, Field
 from uuid import uuid4, UUID
-from api.models.patient_model import Patient
+from src.api.models.patient_model import Patient
 
 
 class InputModel(BaseModel):

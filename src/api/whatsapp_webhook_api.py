@@ -1,16 +1,16 @@
 from typing import Annotated
 from jinja2 import Template
-from api.models.IO_model import WhatsAppWebhookRequest
-from api.services.chat_history_service import ChatHistoryService
-from api.services.appointment_service import AppointmentService
-from api.services.function_tool_service import ToolContext
-from api.clients.postgres_sql_client import PostgresSQLClient
-from api.models.chat_session_model import ChatMessage, SenderType
-from api.models.patient_model import Patient
-from api.clients.whatsapp_client import WhatsAppClient, WhatsAppConfig
+from src.api.models.IO_model import WhatsAppWebhookRequest
+from src.api.services.chat_history_service import ChatHistoryService
+from src.api.services.appointment_service import AppointmentService
+from src.api.services.function_tool_service import ToolContext
+from src.api.clients.postgres_sql_client import PostgresSQLClient
+from src.api.models.chat_session_model import ChatMessage, SenderType
+from src.api.models.patient_model import Patient
+from src.api.clients.whatsapp_client import WhatsAppClient, WhatsAppConfig
+from src.api.services.patient_service import PatientService
 from agents import Agent, Runner
 from dotenv import load_dotenv
-from api.services.patient_service import PatientService
 from fastapi import Depends, APIRouter, Request
 import uuid
 import os

@@ -8,7 +8,11 @@ Environment variables required:
 
 import os
 import pytest
-from api.clients.whatsapp_client import WhatsAppClient, WhatsAppConfig, WhatsAppAPIError
+from src.api.clients.whatsapp_client import (
+    WhatsAppClient,
+    WhatsAppConfig,
+    WhatsAppAPIError,
+)
 from dotenv import load_dotenv
 
 load_dotenv()

@@ -4,9 +4,9 @@ import pytest
 from uuid import uuid4
 from datetime import date
 
-from api.clients.postgres_sql_client import PostgresSQLClient
-from api.services.patient_service import PatientService
-from api.models.patient_model import Patient
+from src.api.clients.postgres_sql_client import PostgresSQLClient
+from src.api.services.patient_service import PatientService
+from src.api.models.patient_model import Patient
 
 
 # ============================================

@@ -8,15 +8,15 @@ from uuid import uuid4
 from datetime import date, time
 from collections.abc import Generator
 
-from api.clients.postgres_sql_client import PostgresSQLClient
-from api.services.appointment_service import AppointmentService
-from api.models.appointment_model import (
+from src.api.clients.postgres_sql_client import PostgresSQLClient
+from src.api.services.appointment_service import AppointmentService
+from src.api.models.appointment_model import (
     Appointment,
     AppointmentStatus,
     AppointmentType,
 )
-from api.models.patient_model import Patient
-from api.models.doctor_model import Doctor
+from src.api.models.patient_model import Patient
+from src.api.models.doctor_model import Doctor
 
 
 # ============================================

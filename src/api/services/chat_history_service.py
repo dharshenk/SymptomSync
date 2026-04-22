@@ -1,5 +1,5 @@
-from api.clients.postgres_sql_client import PostgresSQLClient
-from api.models.chat_session_model import ChatSession, ChatMessage
+from src.api.clients.postgres_sql_client import PostgresSQLClient
+from src.api.models.chat_session_model import ChatSession, ChatMessage
 from uuid import UUID
 
 

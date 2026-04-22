@@ -1,6 +1,6 @@
 # api/services/appointment_service.py
-from api.clients.postgres_sql_client import PostgresSQLClient
-from api.models.appointment_model import Appointment, AppointmentStatus
+from src.api.clients.postgres_sql_client import PostgresSQLClient
+from src.api.models.appointment_model import Appointment, AppointmentStatus
 from uuid import UUID
 import logging
 import json

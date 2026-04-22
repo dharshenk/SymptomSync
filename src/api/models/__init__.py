@@ -1,20 +1,20 @@
 # api/models/__init__.py
-from api.models.patient_model import Patient, Gender
-from api.models.chat_session_model import (
+from src.api.models.patient_model import Patient, Gender
+from src.api.models.chat_session_model import (
     ChatSession,
     ChatMessage,
     SessionStatus,
     SenderType,
     MessageType,
 )
-from api.models.appointment_model import (
+from src.api.models.appointment_model import (
     Appointment,
     AppointmentStatus,
     AppointmentType,
     PaymentStatus,
 )
-from api.models.doctor_model import Doctor
-from api.models.IO_model import InputModel, OutputModel, WhatsAppWebhookRequest
+from src.api.models.doctor_model import Doctor
+from src.api.models.IO_model import InputModel, OutputModel, WhatsAppWebhookRequest
 
 __all__ = [
     "Patient",

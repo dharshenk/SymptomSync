@@ -13,13 +13,13 @@ from datetime import date
 import os
 from dotenv import load_dotenv
 
-from api.clients.postgres_sql_client import PostgresSQLClient, DatabaseConfig
-from api.services.patient_service import PatientService
-from api.services.doctor_service import DoctorService
-from api.services.chat_history_service import ChatHistoryService
-from api.services.appointment_service import AppointmentService
-from api.models.patient_model import Patient
-from api.models.doctor_model import Doctor
+from src.api.clients.postgres_sql_client import PostgresSQLClient, DatabaseConfig
+from src.api.services.patient_service import PatientService
+from src.api.services.doctor_service import DoctorService
+from src.api.services.chat_history_service import ChatHistoryService
+from src.api.services.appointment_service import AppointmentService
+from src.api.models.patient_model import Patient
+from src.api.models.doctor_model import Doctor
 
 load_dotenv()
 

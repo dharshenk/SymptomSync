@@ -3,15 +3,15 @@
 import pytest
 from uuid import uuid4
 
-from api.clients.postgres_sql_client import PostgresSQLClient
-from api.services.chat_history_service import ChatHistoryService
-from api.models.chat_session_model import (
+from src.api.clients.postgres_sql_client import PostgresSQLClient
+from src.api.services.chat_history_service import ChatHistoryService
+from src.api.models.chat_session_model import (
     ChatSession,
     ChatMessage,
     SenderType,
     MessageType,
 )
-from api.models.patient_model import Patient
+from src.api.models.patient_model import Patient
 
 
 # ============================================

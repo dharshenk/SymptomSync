@@ -1,6 +1,6 @@
 # api/services/doctor_service.py
-from api.clients.postgres_sql_client import PostgresSQLClient
-from api.models.doctor_model import Doctor
+from src.api.clients.postgres_sql_client import PostgresSQLClient
+from src.api.models.doctor_model import Doctor
 from uuid import UUID
 import logging
 import json

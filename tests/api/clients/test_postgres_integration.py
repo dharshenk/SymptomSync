@@ -3,7 +3,7 @@ from collections.abc import Generator
 import os
 from dotenv import load_dotenv
 
-from api.clients.postgres_sql_client import (
+from src.api.clients.postgres_sql_client import (
     PostgresSQLClient,
     DatabaseConfig,
     DatabaseError,

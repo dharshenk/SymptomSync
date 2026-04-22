@@ -1,7 +1,7 @@
-from api.services.appointment_service import AppointmentService
-from api.models.appointment_model import Appointment
-from api.models.patient_model import Gender
-from api.services.patient_report_service import generate_patient_report_pdf
+from src.api.services.appointment_service import AppointmentService
+from src.api.models.appointment_model import Appointment
+from src.api.models.patient_model import Gender
+from src.api.services.patient_report_service import generate_patient_report_pdf
 from datetime import date, time
 from uuid import UUID
 from agents import function_tool, RunContextWrapper

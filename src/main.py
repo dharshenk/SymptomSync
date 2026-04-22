@@ -4,9 +4,10 @@ from fastapi import FastAPI
 from agents import Agent
 import os
 
-from api.clients.postgres_sql_client import PostgresSQLClient, DatabaseConfig
-from api.whatsapp_webhook_api import router as WhatsappRouter
-from api.services.function_tool_service import (
+from src.api.clients.postgres_sql_client import PostgresSQLClient, DatabaseConfig
+from src.api.whatsapp_webhook_api import router as WhatsappRouter
+from src.api.health_api import router as HealthRouter
+from src.api.services.function_tool_service import (
     book_appointment,
     generate_patient_report,
     get_available_slots,
@@ -29,7 +30,7 @@ async def lifespan(app: FastAPI):
     app.state.postgres_client = PostgresSQLClient(database_config)
     app.state.agent = Agent(
         name="assistant",
-        model=LitellmModel(model="gemini/gemini-3-flash-preview"),
+        model=LitellmModel(model="gemini/gemini-2.5-flash"),
         tools=[book_appointment, generate_patient_report, get_available_slots],
     )
 
@@ -45,3 +46,4 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(lifespan=lifespan)
 app.include_router(WhatsappRouter)
+app.include_router(HealthRouter)

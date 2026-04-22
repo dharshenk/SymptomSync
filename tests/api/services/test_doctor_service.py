@@ -3,9 +3,9 @@
 import pytest
 from uuid import uuid4
 
-from api.clients.postgres_sql_client import PostgresSQLClient
-from api.services.doctor_service import DoctorService
-from api.models.doctor_model import Doctor
+from src.api.clients.postgres_sql_client import PostgresSQLClient
+from src.api.services.doctor_service import DoctorService
+from src.api.models.doctor_model import Doctor
 
 
 # ============================================

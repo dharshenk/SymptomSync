@@ -1,6 +1,6 @@
 # api/services/patient_service.py
-from api.clients.postgres_sql_client import PostgresSQLClient
-from api.models.patient_model import Patient
+from src.api.clients.postgres_sql_client import PostgresSQLClient
+from src.api.models.patient_model import Patient
 from uuid import UUID
 import logging
 import json

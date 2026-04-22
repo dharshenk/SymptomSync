@@ -1,6 +1,22 @@
 version: '3.8'
 
 services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: symptom-sync-app
+    env_file:
+      - .env
+    ports:
+      - "8888:8000"
+    depends_on:
+      - postgres-db
+      - redis-db
+    networks:
+      - symptom_sync_backend
+    restart: unless-stopped
+
   postgres-db:
     image: postgres:17.5-alpine3.22
     container_name: postgres-db

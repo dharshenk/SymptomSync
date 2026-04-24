@@ -30,7 +30,7 @@ async def lifespan(app: FastAPI):
     app.state.postgres_client = PostgresSQLClient(database_config)
     app.state.agent = Agent(
         name="assistant",
-        model=LitellmModel(model="gemini/gemini-2.5-flash"),
+        model=LitellmModel(model=os.getenv("LLM_MODEL")),
         tools=[book_appointment, generate_patient_report, get_available_slots],
     )
 

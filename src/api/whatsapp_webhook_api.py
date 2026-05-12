@@ -155,11 +155,20 @@ async def get_response(
         system_prompt=system_prompt,
     )
 
+    # Fetch the latest appointment for this chat session, if it exists
+    latest_appointment = await appointment_service.get_appointment_by_chat_session_id(
+        chat_session.id
+    )
+
     tool_context = ToolContext(
         patient_id=patient.id,
         chat_session_id=chat_session.id,
         appointment_service=appointment_service,
         doctor_id=uuid.UUID("11111111-1111-1111-1111-111111111111"),
+        appointment=latest_appointment,
+        appointment_date=(
+            latest_appointment.appointment_date if latest_appointment else date.today()
+        ),
     )
 
     # running the agent

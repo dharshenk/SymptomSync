@@ -186,6 +186,33 @@ class AppointmentService:
 
         return Appointment(**rows[0])
 
+    async def get_appointment_by_chat_session_id(
+        self, chat_session_id: UUID
+    ) -> Appointment | None:
+        """
+        Fetch the latest appointment for a chat session.
+
+        Args:
+            chat_session_id: UUID of the chat session
+
+        Returns:
+            Appointment model or None if not found
+        """
+        query = """
+            SELECT * FROM appointments
+            WHERE chat_session_id = %(chat_session_id)s
+            ORDER BY created_at DESC
+            LIMIT 1;
+        """
+        rows = self._postgres_client.execute_query(
+            query, {"chat_session_id": str(chat_session_id)}, fetch="one"
+        )
+
+        if not rows:
+            return None
+
+        return Appointment(**rows[0])
+
     async def list_appointments_for_patient(
         self, patient_id: UUID, limit: int = 50, offset: int = 0
     ) -> list[Appointment] | None:

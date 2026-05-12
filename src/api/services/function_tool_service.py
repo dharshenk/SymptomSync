@@ -124,6 +124,7 @@ def generate_patient_report(
             appointment_number=wrapper.context.appointment.appointment_number,
             output_path=str(path),
         )
+        return f"Patient report has been successfully generated and saved as {wrapper.context.appointment.appointment_number}.pdf"
 
     except Exception as e:
         logger.error(f"Report failed to generate {str(e)}")

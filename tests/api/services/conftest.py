@@ -8,7 +8,7 @@ foreign-key dependencies.
 
 import pytest
 from collections.abc import Generator
-from uuid import uuid4
+from uuid import UUID, uuid4
 from datetime import date
 import os
 from dotenv import load_dotenv
@@ -171,6 +171,37 @@ def setup_schema(db_client: PostgresSQLClient) -> Generator[None, None, None]:
         """
     )
 
+    db_client.execute_command(
+        """
+        CREATE TABLE IF NOT EXISTS doctor_availability (
+            id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+            doctor_id UUID REFERENCES doctors(id) ON DELETE CASCADE,
+            day_of_week INTEGER CHECK (day_of_week BETWEEN 0 AND 6),
+            start_time TIME NOT NULL,
+            end_time TIME NOT NULL,
+            slot_duration INTEGER DEFAULT 30,
+            break_duration INTEGER DEFAULT 15,
+            is_active BOOLEAN DEFAULT true,
+            created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+        );
+        """
+    )
+
+    db_client.execute_command(
+        """
+        CREATE TABLE IF NOT EXISTS doctor_unavailability (
+            id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+            doctor_id UUID REFERENCES doctors(id) ON DELETE CASCADE,
+            unavailable_date DATE NOT NULL,
+            start_time TIME,
+            end_time TIME,
+            reason VARCHAR(100),
+            created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+        );
+        """
+    )
+
     # ---- triggers (same as production schema) ----
     db_client.execute_command(
         """
@@ -223,6 +254,124 @@ def setup_schema(db_client: PostgresSQLClient) -> Generator[None, None, None]:
         """
     )
 
+    # ---- SQL functions used by appointment_service ----
+    db_client.execute_command(
+        """
+        CREATE OR REPLACE FUNCTION book_appointment(
+            p_appointment_number VARCHAR(30),
+            p_patient_id UUID,
+            p_doctor_id UUID,
+            p_appointment_date DATE,
+            p_start_time TIME,
+            p_end_time TIME,
+            p_chat_session_id UUID DEFAULT NULL,
+            p_appointment_type VARCHAR(30) DEFAULT 'consultation',
+            p_consultation_fee DECIMAL(10,2) DEFAULT NULL,
+            p_payment_status VARCHAR(20) DEFAULT 'pending',
+            p_patient_notes TEXT DEFAULT NULL,
+            p_doctor_notes TEXT DEFAULT NULL
+        ) RETURNS UUID AS $$
+        DECLARE
+            v_appointment_id UUID;
+        BEGIN
+            IF EXISTS (
+                SELECT 1 FROM appointments
+                WHERE doctor_id = p_doctor_id
+                  AND appointment_date = p_appointment_date
+                  AND start_time = p_start_time
+                  AND status NOT IN ('cancelled', 'no_show')
+            ) THEN
+                RAISE EXCEPTION 'Cannot book appointment: start_time % already booked for doctor % on %',
+                    p_start_time, p_doctor_id, p_appointment_date;
+            END IF;
+
+            INSERT INTO appointments (
+                appointment_number, patient_id, doctor_id, chat_session_id,
+                appointment_date, start_time, end_time, appointment_type,
+                consultation_fee, payment_status, patient_notes, doctor_notes
+            ) VALUES (
+                p_appointment_number, p_patient_id, p_doctor_id, p_chat_session_id,
+                p_appointment_date, p_start_time, p_end_time, p_appointment_type,
+                p_consultation_fee, p_payment_status, p_patient_notes, p_doctor_notes
+            ) RETURNING id INTO v_appointment_id;
+
+            RETURN v_appointment_id;
+        END;
+        $$ LANGUAGE plpgsql;
+        """
+    )
+
+    db_client.execute_command(
+        """
+        CREATE OR REPLACE FUNCTION get_available_slots(
+            p_doctor_id UUID,
+            p_appointment_date DATE
+        ) RETURNS TABLE (
+            slot_start TIME,
+            slot_end TIME
+        ) AS $$
+        DECLARE
+            availability_rec RECORD;
+            slot_start_time TIME;
+            slot_end_time TIME;
+            slot_duration INTERVAL;
+        BEGIN
+            SELECT da.start_time, da.end_time,
+                   MAKE_INTERVAL(mins => da.slot_duration) as duration,
+                   MAKE_INTERVAL(mins => da.break_duration) as break_time
+            INTO availability_rec
+            FROM doctor_availability da
+            WHERE da.doctor_id = p_doctor_id
+              AND da.day_of_week = EXTRACT(DOW FROM p_appointment_date)
+              AND da.is_active = true;
+
+            IF NOT FOUND THEN
+                RETURN;
+            END IF;
+
+            IF EXISTS (
+                SELECT 1 FROM doctor_unavailability du
+                WHERE du.doctor_id = p_doctor_id
+                  AND du.unavailable_date = p_appointment_date
+                  AND du.start_time IS NULL
+            ) THEN
+                RETURN;
+            END IF;
+
+            slot_start_time := availability_rec.start_time;
+            slot_duration := availability_rec.duration;
+
+            WHILE slot_start_time + slot_duration <= availability_rec.end_time LOOP
+                slot_end_time := slot_start_time + slot_duration;
+
+                IF NOT EXISTS (
+                    SELECT 1 FROM appointments a
+                    WHERE a.doctor_id = p_doctor_id
+                      AND a.appointment_date = p_appointment_date
+                      AND a.start_time = slot_start_time
+                      AND a.status NOT IN ('cancelled', 'no_show')
+                ) THEN
+                    IF NOT EXISTS (
+                        SELECT 1 FROM doctor_unavailability du
+                        WHERE du.doctor_id = p_doctor_id
+                          AND du.unavailable_date = p_appointment_date
+                          AND du.start_time IS NOT NULL
+                          AND slot_start_time >= du.start_time
+                          AND slot_end_time <= du.end_time
+                    ) THEN
+                        slot_start := slot_start_time;
+                        slot_end := slot_end_time;
+                        RETURN NEXT;
+                    END IF;
+                END IF;
+
+                slot_start_time := slot_start_time + slot_duration + availability_rec.break_time;
+            END LOOP;
+        END;
+        $$ LANGUAGE plpgsql;
+        """
+    )
+
     yield
 
     # Teardown: drop tables in reverse FK order
@@ -230,6 +379,8 @@ def setup_schema(db_client: PostgresSQLClient) -> Generator[None, None, None]:
         "appointments",
         "chat_messages",
         "chat_sessions",
+        "doctor_unavailability",
+        "doctor_availability",
         "doctors",
         "patients",
     ):
@@ -241,6 +392,8 @@ def setup_schema(db_client: PostgresSQLClient) -> Generator[None, None, None]:
     db_client.execute_command(
         "DROP FUNCTION IF EXISTS update_session_message_count() CASCADE;"
     )
+    db_client.execute_command("DROP FUNCTION IF EXISTS book_appointment() CASCADE;")
+    db_client.execute_command("DROP FUNCTION IF EXISTS get_available_slots() CASCADE;")
 
 
 # ============================================
@@ -369,4 +522,33 @@ def sample_doctor(db_client: PostgresSQLClient) -> Generator[Doctor, None, None]
 
     db_client.execute_command(
         "DELETE FROM doctors WHERE id = %(id)s;", {"id": str(doctor.id)}
+    )
+
+
+@pytest.fixture()
+def sample_chat_session(
+    db_client: PostgresSQLClient, sample_patient: Patient
+) -> Generator[UUID, None, None]:
+    """Insert a chat_session row and clean up after the test.
+
+    Returns the UUID of the created session so tests can reference it.
+    """
+    session_id = uuid4()
+    db_client.execute_command(
+        """
+        INSERT INTO chat_sessions (id, patient_id, session_status)
+        VALUES (%(id)s, %(patient_id)s, 'active');
+        """,
+        {"id": str(session_id), "patient_id": str(sample_patient.id)},
+    )
+
+    yield session_id
+
+    # Delete any appointments referencing this session first (FK dependency)
+    db_client.execute_command(
+        "DELETE FROM appointments WHERE chat_session_id = %(id)s;",
+        {"id": str(session_id)},
+    )
+    db_client.execute_command(
+        "DELETE FROM chat_sessions WHERE id = %(id)s;", {"id": str(session_id)}
     )

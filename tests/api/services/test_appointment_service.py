@@ -4,7 +4,7 @@ import pytest
 import json
 import random
 import string
-from uuid import uuid4
+from uuid import UUID, uuid4
 from datetime import date, time
 from collections.abc import Generator
 
@@ -83,7 +83,12 @@ class TestAppointmentNumberGeneration:
 
 
 def _make_appointment(
-    patient_id, doctor_id, appt_date=None, start=None, end=None
+    patient_id,
+    doctor_id,
+    appt_date=None,
+    start=None,
+    end=None,
+    chat_session_id=None,
 ) -> Appointment:
     """Helper to build an Appointment with reasonable defaults."""
     return Appointment(
@@ -95,6 +100,7 @@ def _make_appointment(
         appointment_type=AppointmentType.consultation,
         consultation_fee=150.00,
         patient_notes="Test notes",
+        chat_session_id=chat_session_id,
     )
 
 
@@ -146,11 +152,12 @@ class TestAppointmentServiceBook:
 
     @pytest.fixture(autouse=True)
     def _cleanup(self, db_client: PostgresSQLClient):
-        self._created_ids: list[str] = []
+        self._created_numbers: list[str] = []
         yield
-        for aid in self._created_ids:
+        for num in self._created_numbers:
             db_client.execute_command(
-                "DELETE FROM appointments WHERE id = %(id)s;", {"id": aid}
+                "DELETE FROM appointments WHERE appointment_number = %(num)s;",
+                {"num": num},
             )
 
     async def test_book_appointment_returns_true(
@@ -158,11 +165,16 @@ class TestAppointmentServiceBook:
         appointment_service: AppointmentService,
         sample_patient: Patient,
         sample_doctor: Doctor,
+        sample_chat_session: UUID,
     ):
-        appt = _make_appointment(sample_patient.id, sample_doctor.id)
-        self._created_ids.append(str(appt.id))
+        appt = _make_appointment(
+            sample_patient.id,
+            sample_doctor.id,
+            chat_session_id=sample_chat_session,
+        )
 
         result = await appointment_service.book_appointment(appt)
+        self._created_numbers.append(appt.appointment_number)
         assert result is True
 
     async def test_book_appointment_generates_number(
@@ -170,11 +182,16 @@ class TestAppointmentServiceBook:
         appointment_service: AppointmentService,
         sample_patient: Patient,
         sample_doctor: Doctor,
+        sample_chat_session: UUID,
     ):
-        appt = _make_appointment(sample_patient.id, sample_doctor.id)
-        self._created_ids.append(str(appt.id))
+        appt = _make_appointment(
+            sample_patient.id,
+            sample_doctor.id,
+            chat_session_id=sample_chat_session,
+        )
 
         await appointment_service.book_appointment(appt)
+        self._created_numbers.append(appt.appointment_number)
         assert appt.appointment_number is not None
         assert appt.appointment_number.startswith("APT-")
 
@@ -183,18 +200,78 @@ class TestAppointmentServiceBook:
         appointment_service: AppointmentService,
         sample_patient: Patient,
         sample_doctor: Doctor,
+        sample_chat_session: UUID,
     ):
-        appt = _make_appointment(sample_patient.id, sample_doctor.id)
-        self._created_ids.append(str(appt.id))
+        appt = _make_appointment(
+            sample_patient.id,
+            sample_doctor.id,
+            chat_session_id=sample_chat_session,
+        )
 
         await appointment_service.book_appointment(appt)
-        fetched = await appointment_service.get_appointment(appt.id)
+        self._created_numbers.append(appt.appointment_number)
+
+        # SQL function generates its own UUID, so fetch by patient_id
+        fetched = await appointment_service.get_appointment_by_patient_id(
+            sample_patient.id
+        )
 
         assert fetched is not None
         assert fetched.patient_id == sample_patient.id
         assert fetched.doctor_id == sample_doctor.id
         assert fetched.status == "scheduled"
         assert fetched.patient_notes == "Test notes"
+        assert fetched.chat_session_id == sample_chat_session
+        assert fetched.appointment_number == appt.appointment_number
+
+    async def test_book_appointment_without_chat_session(
+        self,
+        appointment_service: AppointmentService,
+        sample_patient: Patient,
+        sample_doctor: Doctor,
+    ):
+        """Booking without a chat_session_id should still succeed (NULL FK)."""
+        appt = _make_appointment(
+            sample_patient.id,
+            sample_doctor.id,
+            start=time(11, 0),
+            end=time(11, 30),
+        )
+
+        result = await appointment_service.book_appointment(appt)
+        self._created_numbers.append(appt.appointment_number)
+        assert result is True
+
+    async def test_book_appointment_duplicate_slot_raises(
+        self,
+        appointment_service: AppointmentService,
+        sample_patient: Patient,
+        sample_doctor: Doctor,
+        sample_chat_session: UUID,
+    ):
+        """The SQL function should raise when double-booking the same slot."""
+        appt1 = _make_appointment(
+            sample_patient.id,
+            sample_doctor.id,
+            appt_date=date(2026, 6, 15),
+            start=time(9, 0),
+            end=time(9, 30),
+            chat_session_id=sample_chat_session,
+        )
+        await appointment_service.book_appointment(appt1)
+        self._created_numbers.append(appt1.appointment_number)
+
+        appt2 = _make_appointment(
+            sample_patient.id,
+            sample_doctor.id,
+            appt_date=date(2026, 6, 15),
+            start=time(9, 0),
+            end=time(9, 30),
+            chat_session_id=sample_chat_session,
+        )
+
+        with pytest.raises(Exception, match="already booked"):
+            await appointment_service.book_appointment(appt2)
 
 
 @pytest.mark.integration
@@ -533,3 +610,186 @@ class TestAppointmentServiceListAndFilter:
         )
         # Could be empty or not depending on DB state; just verify it's a list
         assert isinstance(result, list)
+
+
+# ============================================
+# NEW METHOD TESTS
+# ============================================
+
+
+@pytest.mark.integration
+class TestAppointmentServiceGetByPatientId:
+    """Tests for get_appointment_by_patient_id."""
+
+    @pytest.fixture()
+    def booked_appointment(
+        self,
+        db_client: PostgresSQLClient,
+        sample_patient: Patient,
+        sample_doctor: Doctor,
+    ) -> Generator[Appointment, None, None]:
+        appt = _make_appointment(sample_patient.id, sample_doctor.id)
+        _insert_appointment_via_db(db_client, appt)
+        yield appt
+        db_client.execute_command(
+            "DELETE FROM appointments WHERE id = %(id)s;", {"id": str(appt.id)}
+        )
+
+    async def test_get_by_patient_id_returns_appointment(
+        self,
+        appointment_service: AppointmentService,
+        booked_appointment: Appointment,
+        sample_patient: Patient,
+    ):
+        fetched = await appointment_service.get_appointment_by_patient_id(
+            sample_patient.id
+        )
+        assert fetched is not None
+        assert fetched.patient_id == sample_patient.id
+
+    async def test_get_by_patient_id_returns_latest(
+        self,
+        appointment_service: AppointmentService,
+        db_client: PostgresSQLClient,
+        sample_patient: Patient,
+        sample_doctor: Doctor,
+    ):
+        """When multiple appointments exist, the most recently created is returned."""
+        appt1 = _make_appointment(
+            sample_patient.id,
+            sample_doctor.id,
+            appt_date=date(2026, 6, 1),
+            start=time(9, 0),
+            end=time(9, 30),
+        )
+        appt2 = _make_appointment(
+            sample_patient.id,
+            sample_doctor.id,
+            appt_date=date(2026, 6, 2),
+            start=time(10, 0),
+            end=time(10, 30),
+        )
+        _insert_appointment_via_db(db_client, appt1)
+        _insert_appointment_via_db(db_client, appt2)
+
+        try:
+            fetched = await appointment_service.get_appointment_by_patient_id(
+                sample_patient.id
+            )
+            assert fetched is not None
+            assert fetched.id == appt2.id  # latest by created_at
+        finally:
+            for a in (appt1, appt2):
+                db_client.execute_command(
+                    "DELETE FROM appointments WHERE id = %(id)s;",
+                    {"id": str(a.id)},
+                )
+
+    async def test_get_by_patient_id_not_found(
+        self, appointment_service: AppointmentService
+    ):
+        result = await appointment_service.get_appointment_by_patient_id(uuid4())
+        assert result is None
+
+
+@pytest.mark.integration
+class TestAppointmentServiceGetByChatSessionId:
+    """Tests for get_appointment_by_chat_session_id."""
+
+    @pytest.fixture()
+    def booked_appointment_with_session(
+        self,
+        db_client: PostgresSQLClient,
+        sample_patient: Patient,
+        sample_doctor: Doctor,
+        sample_chat_session: UUID,
+    ) -> Generator[Appointment, None, None]:
+        appt = _make_appointment(
+            sample_patient.id,
+            sample_doctor.id,
+            chat_session_id=sample_chat_session,
+        )
+        _insert_appointment_via_db(db_client, appt)
+        yield appt
+        db_client.execute_command(
+            "DELETE FROM appointments WHERE id = %(id)s;", {"id": str(appt.id)}
+        )
+
+    async def test_get_by_chat_session_id_returns_appointment(
+        self,
+        appointment_service: AppointmentService,
+        booked_appointment_with_session: Appointment,
+        sample_chat_session: UUID,
+    ):
+        fetched = await appointment_service.get_appointment_by_chat_session_id(
+            sample_chat_session
+        )
+        assert fetched is not None
+        assert fetched.chat_session_id == sample_chat_session
+        assert fetched.id == booked_appointment_with_session.id
+
+    async def test_get_by_chat_session_id_not_found(
+        self, appointment_service: AppointmentService
+    ):
+        result = await appointment_service.get_appointment_by_chat_session_id(uuid4())
+        assert result is None
+
+
+@pytest.mark.integration
+class TestAppointmentServiceGetAvailableSlots:
+    """Tests for get_available_slots."""
+
+    @pytest.fixture(autouse=True)
+    def _setup_availability(
+        self,
+        db_client: PostgresSQLClient,
+        sample_doctor: Doctor,
+    ):
+        """Insert a doctor_availability row for Wednesday (DOW=3).
+
+        Slots: 09:00–12:00 with 30-min duration and 0-min break = 6 slots.
+        """
+        self._avail_id = uuid4()
+        db_client.execute_command(
+            """
+            INSERT INTO doctor_availability
+                (id, doctor_id, day_of_week, start_time, end_time,
+                 slot_duration, break_duration, is_active)
+            VALUES
+                (%(id)s, %(doctor_id)s, 3, '09:00', '12:00', 30, 0, true);
+            """,
+            {"id": str(self._avail_id), "doctor_id": str(sample_doctor.id)},
+        )
+        self._doctor_id = sample_doctor.id
+
+        yield
+
+        db_client.execute_command(
+            "DELETE FROM doctor_availability WHERE id = %(id)s;",
+            {"id": str(self._avail_id)},
+        )
+
+    async def test_returns_slots_for_available_day(
+        self, appointment_service: AppointmentService
+    ):
+        # 2026-06-03 is a Wednesday (DOW=3)
+        slots = await appointment_service.get_available_slots(
+            self._doctor_id, date(2026, 6, 3)
+        )
+        assert slots is not None
+        assert len(slots) == 6
+
+    async def test_returns_none_for_no_availability(
+        self, appointment_service: AppointmentService
+    ):
+        # 2026-06-01 is a Monday (DOW=1), no availability configured
+        slots = await appointment_service.get_available_slots(
+            self._doctor_id, date(2026, 6, 1)
+        )
+        assert slots is None
+
+    async def test_returns_none_for_unknown_doctor(
+        self, appointment_service: AppointmentService
+    ):
+        slots = await appointment_service.get_available_slots(uuid4(), date(2026, 6, 3))
+        assert slots is None

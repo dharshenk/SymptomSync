@@ -155,9 +155,9 @@ async def get_response(
         system_prompt=system_prompt,
     )
 
-    # Fetch the latest appointment for this chat session, if it exists
-    latest_appointment = await appointment_service.get_appointment_by_chat_session_id(
-        chat_session.id
+    # Fetch the latest appointment for this patient
+    latest_appointment = await appointment_service.get_appointment_by_patient_id(
+        patient.id
     )
 
     tool_context = ToolContext(

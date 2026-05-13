@@ -145,6 +145,70 @@ CREATE TABLE if not exists appointments (
 );
 
 -- =====================================================
+-- APPOINTMENT BOOKING FUNCTION
+-- =====================================================
+
+CREATE OR REPLACE FUNCTION book_appointment(
+    p_appointment_number VARCHAR(30),
+    p_patient_id UUID,
+    p_doctor_id UUID,
+    p_appointment_date DATE,
+    p_start_time TIME,
+    p_end_time TIME,
+    p_chat_session_id UUID DEFAULT NULL,
+    p_appointment_type VARCHAR(30) DEFAULT 'consultation',
+    p_consultation_fee DECIMAL(10,2) DEFAULT NULL,
+    p_payment_status VARCHAR(20) DEFAULT 'pending',
+    p_patient_notes TEXT DEFAULT NULL,
+    p_doctor_notes TEXT DEFAULT NULL
+) RETURNS UUID AS $$
+DECLARE
+    v_appointment_id UUID;
+BEGIN
+    IF EXISTS (
+        SELECT 1 FROM appointments
+        WHERE doctor_id = p_doctor_id
+          AND appointment_date = p_appointment_date
+          AND start_time = p_start_time
+          AND status NOT IN ('cancelled', 'no_show')
+    ) THEN
+        RAISE EXCEPTION 'Cannot book appointment: start_time % already booked for doctor % on %',
+            p_start_time, p_doctor_id, p_appointment_date;
+    END IF;
+
+    INSERT INTO appointments (
+        appointment_number,
+        patient_id,
+        doctor_id,
+        chat_session_id,
+        appointment_date,
+        start_time,
+        end_time,
+        appointment_type,
+        consultation_fee,
+        payment_status,
+        patient_notes,
+        doctor_notes
+    ) VALUES (
+        p_appointment_number,
+        p_patient_id,
+        p_doctor_id,
+        p_chat_session_id,
+        p_appointment_date,
+        p_start_time,
+        p_end_time,
+        p_appointment_type,
+        p_consultation_fee,
+        p_payment_status,
+        p_patient_notes,
+        p_doctor_notes
+    ) RETURNING id INTO v_appointment_id;
+
+    RETURN v_appointment_id;
+END;
+$$ LANGUAGE plpgsql;
+
+-- =====================================================
 -- SYSTEM CONFIGURATION
 -- =====================================================
 

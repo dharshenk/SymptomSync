@@ -119,9 +119,7 @@ class AppointmentService:
         }
 
         try:
-            result = self._postgres_client.execute_query(
-                function_query, params, fetch="one"
-            )
+            result = self._postgres_client.execute_command(function_query, params)
             return result is not None
         except Exception as e:
             self._logger.error(f"Error booking appointment: {str(e)}")

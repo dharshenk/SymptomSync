@@ -73,7 +73,6 @@ async def book_appointment(
     end_time: time,
     patient_notes: str | None = None,
 ):
-
     appointment = Appointment(
         patient_id=wrapper.context.patient_id,  # UUID from PatientData
         doctor_id=wrapper.context.doctor_id,
@@ -85,12 +84,13 @@ async def book_appointment(
     )
 
     wrapper.context.appointment = appointment
-    result = await wrapper.context.appointment_service.book_appointment(appointment)
-    if result:
-        return f"Appointment has been successfully booked with appointment number: {wrapper.context.appointment.appointment_number}"
+    try:
+        result = await wrapper.context.appointment_service.book_appointment(appointment)
+        if result:
+            return f"Appointment has been successfully booked with appointment number: {wrapper.context.appointment.appointment_number}"
 
-    else:
-        return "Failed to book appointment"
+    except Exception as e:
+        return f"Failed to book appointment due to the exception: {e}"
 
 
 @function_tool

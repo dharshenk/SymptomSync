@@ -3,7 +3,6 @@ from src.api.clients.postgres_sql_client import PostgresSQLClient
 from src.api.models.appointment_model import Appointment, AppointmentStatus
 from uuid import UUID
 import logging
-import json
 import random
 import string
 from datetime import date, time
@@ -59,13 +58,13 @@ class AppointmentService:
 
     async def book_appointment(self, appointment: Appointment) -> bool:
         """
-        Book a new appointment and generate appointment_number automatically.
+        Book a new appointment using the database function book_appoinment.
 
         Args:
             appointment: Appointment model with required fields (appointment_date, start_time, end_time)
 
         Returns:
-            True if the appointment was booked successfully, False if no row was affected.
+            True if the appointment was booked successfully, False if booking failed.
 
         Raises:
             DatabaseError: Re-raised from the postgres client on query failure.
@@ -75,49 +74,55 @@ class AppointmentService:
             appointment.appointment_date, appointment.start_time
         )
 
-        insert_query = """
-            INSERT INTO appointments (
-                id,
-                appointment_number,
-                patient_id,
-                doctor_id,
-                chat_session_id,
-                appointment_date,
-                start_time,
-                end_time,
-                appointment_type,
-                status,
-                consultation_fee,
-                payment_status,
-                patient_notes
-            )
-            VALUES (
-                %(id)s,
-                %(appointment_number)s,
-                %(patient_id)s,
-                %(doctor_id)s,
-                %(chat_session_id)s,
-                %(appointment_date)s,
-                %(start_time)s,
-                %(end_time)s,
-                %(appointment_type)s,
-                %(status)s,
-                %(consultation_fee)s,
-                %(payment_status)s,
-                %(patient_notes)s
-            );
+        function_query = """
+            SELECT book_appointment(
+                %(appointment_number)s::text,
+                %(patient_id)s::uuid,
+                %(doctor_id)s::uuid,
+                %(appointment_date)s::date,
+                %(start_time)s::time,
+                %(end_time)s::time,
+                %(chat_session_id)s::uuid,
+                %(appointment_type)s::text,
+                %(consultation_fee)s::numeric,
+                %(payment_status)s::text,
+                %(patient_notes)s::text,
+                %(doctor_notes)s::text
+                );
         """
 
-        params = json.loads(appointment.model_dump_json())
-        params["id"] = str(params["id"])
-        params["patient_id"] = str(params["patient_id"])
-        params["doctor_id"] = str(params["doctor_id"])
-        if params.get("chat_session_id"):
-            params["chat_session_id"] = str(params["chat_session_id"])
+        params = {
+            "appointment_number": appointment.appointment_number,
+            "patient_id": str(appointment.patient_id),
+            "doctor_id": str(appointment.doctor_id),
+            "appointment_date": appointment.appointment_date,
+            "start_time": appointment.start_time,
+            "end_time": appointment.end_time,
+            "chat_session_id": (
+                str(appointment.chat_session_id)
+                if appointment.chat_session_id
+                else None
+            ),
+            "appointment_type": appointment.appointment_type.value,
+            "consultation_fee": appointment.consultation_fee,
+            "payment_status": appointment.payment_status.value,
+            "patient_notes": (
+                appointment.patient_notes
+                if hasattr(appointment, "patient_notes")
+                else None
+            ),
+            "doctor_notes": (
+                appointment.doctor_notes
+                if hasattr(appointment, "doctor_notes")
+                else None
+            ),
+        }
 
         try:
-            rowcount = self._postgres_client.execute_command(insert_query, params)
-            return rowcount > 0
+            result = self._postgres_client.execute_query(
+                function_query, params, fetch="one"
+            )
+            return result is not None
         except Exception as e:
             self._logger.error(f"Error booking appointment: {str(e)}")
             raise

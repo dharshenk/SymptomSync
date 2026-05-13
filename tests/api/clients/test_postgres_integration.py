@@ -15,8 +15,8 @@ load_dotenv()
 @pytest.fixture(scope="session")
 def db_config() -> DatabaseConfig:
     return DatabaseConfig(
-        host=os.getenv("POSTGRES_HOST"),
-        port=os.getenv("POSTGRES_PORT"),
+        host=os.getenv("POSTGRES_TEST_HOST"),
+        port=os.getenv("POSTGRES_TEST_PORT"),
         username="test_user",
         password="test_password",  # pragma: allowlist secret
         database="test_db",

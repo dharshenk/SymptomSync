@@ -53,7 +53,7 @@ class PostgresSQLClient:
                 "user": self.config.username,
                 "password": self.config.password,
                 "connect_timeout": self.config.connect_timeout,
-                "options": f"-c statement_timeout={self.config.command_timeout * 1000}",
+                # "options": f"-c statement_timeout={self.config.command_timeout * 1000}",
             }
             _pool = psycopg2.pool.ThreadedConnectionPool(
                 minconn=self.config.min_connections,

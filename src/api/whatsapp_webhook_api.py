@@ -11,7 +11,8 @@ from src.api.clients.whatsapp_client import WhatsAppClient, WhatsAppConfig
 from src.api.services.patient_service import PatientService
 from agents import Agent, Runner
 from dotenv import load_dotenv
-from fastapi import Depends, APIRouter, Request
+from fastapi import Depends, APIRouter, Request, Query, HTTPException
+from fastapi.responses import PlainTextResponse
 import uuid
 import os
 from datetime import date
@@ -19,6 +20,7 @@ from datetime import date
 load_dotenv()
 
 SYSTEM_PROMPT_PATH = os.getenv("SYSTEM_PROMPT_PATH")
+VERIFY_TOKEN = os.getenv("VERIFY_TOKEN")
 
 
 def get_postgres_client(request: Request) -> PostgresSQLClient:
@@ -103,7 +105,7 @@ def get_system_prompt():
     return system_prompt
 
 
-@router.post("/")
+@router.post("/webhook")
 async def get_response(
     # user_input: InputModel,
     whatsapp_webhook_request: WhatsAppWebhookRequest,
@@ -185,6 +187,24 @@ async def get_response(
 
     await chat_history_service.add_message(ai_message)
 
-    # whatsapp_client.send_text_message(to="918610432661", message=response.final_output)
+    whatsapp_client.send_text_message(to="918610432661", message=response.final_output)
 
     return response.final_output
+
+
+@router.get("/webhook")
+async def verify(
+    mode: str = Query(None, alias="hub.mode"),
+    token: str = Query(None, alias="hub.verify_token"),
+    challenge: str = Query(None, alias="hub.challenge"),
+):
+    if mode and token:
+        if mode == "subscribe" and token == VERIFY_TOKEN:  # however you load config
+            # logging.info("WEBHOOK_VERIFIED")
+            return PlainTextResponse(content=challenge, status_code=200)
+        else:
+            # logging.info("VERIFICATION_FAILED")
+            raise HTTPException(status_code=403, detail="Verification failed")
+    else:
+        # logging.info("MISSING_PARAMETER")
+        raise HTTPException(status_code=400, detail="Missing parameters")

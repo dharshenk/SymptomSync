@@ -21,7 +21,7 @@ def config():
     return WhatsAppConfig(
         access_token="dummy_token",
         phone_number_id="123456",
-        api_version="v23.0",
+        api_version="v25.0",
         base_url="https://graph.facebook.com",
         timeout=10,
         max_retries=2,

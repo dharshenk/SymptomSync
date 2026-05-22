@@ -1,5 +1,5 @@
 """
-Production WhatsApp Client using Facebook Graph API v23.0
+Production WhatsApp Client using Facebook Graph API v25.0
 Supports: Text, Template, Image, and Interactive Button Messages
 """
 
@@ -18,7 +18,7 @@ class WhatsAppConfig(BaseModel):
 
     access_token: str
     phone_number_id: str
-    api_version: str = Field(default="v23.0")
+    api_version: str = Field(default="v25.0")
     base_url: str = Field(default="https://graph.facebook.com")
     timeout: int = Field(default=30)
     max_retries: int = Field(default=3)

@@ -1,13 +1,14 @@
 from typing import Annotated
 from jinja2 import Template
-from src.api.models.IO_model import WhatsAppWebhookRequest
 from src.api.services.chat_history_service import ChatHistoryService
 from src.api.services.appointment_service import AppointmentService
 from src.api.services.function_tool_service import ToolContext
 from src.api.clients.postgres_sql_client import PostgresSQLClient
 from src.api.models.chat_session_model import ChatMessage, SenderType
 from src.api.models.patient_model import Patient
+from src.api.models.telegram_model import TelegramUpdate
 from src.api.clients.whatsapp_client import WhatsAppClient, WhatsAppConfig
+from src.api.clients.telegram_client import TelegramClient, TelegramConfig
 from src.api.services.patient_service import PatientService
 from agents import Agent, Runner
 from dotenv import load_dotenv
@@ -21,6 +22,7 @@ load_dotenv()
 
 SYSTEM_PROMPT_PATH = os.getenv("SYSTEM_PROMPT_PATH")
 VERIFY_TOKEN = os.getenv("VERIFY_TOKEN")
+WHATSAPP_RECIPIENT_NUMBER = os.getenv("WHATSAPP_RECIPIENT_NUMBER")
 
 
 def get_postgres_client(request: Request) -> PostgresSQLClient:
@@ -29,6 +31,10 @@ def get_postgres_client(request: Request) -> PostgresSQLClient:
 
 def get_agent(request: Request) -> Agent:
     return request.app.state.agent
+
+
+def get_telegram_client():
+    return TelegramClient(TelegramConfig(bot_token=os.getenv("TELEGRAM_BOT_TOKEN")))
 
 
 def get_whatsapp_client():
@@ -108,22 +114,21 @@ def get_system_prompt():
 @router.post("/webhook")
 async def get_response(
     # user_input: InputModel,
-    whatsapp_webhook_request: WhatsAppWebhookRequest,
+    # whatsapp_webhook_request: WhatsAppWebhookRequest,
+    telegram_webhook_request: TelegramUpdate,
     patient_service: Annotated[PatientService, Depends(get_patient_service)],
     chat_history_service: Annotated[
         ChatHistoryService, Depends(get_chat_history_service)
     ],
     agent: Annotated[Agent, Depends(get_agent)],
-    whatsapp_client: Annotated[WhatsAppClient, Depends(get_whatsapp_client)],
+    telegram_client: Annotated[TelegramClient, Depends(get_telegram_client)],
     appointment_service: Annotated[
         AppointmentService, Depends(get_appointment_service)
     ],
 ):
-    patient_ph_no = whatsapp_webhook_request.entry[0].changes[0].value.messages[0].from_
+    patient_ph_no = str(telegram_webhook_request.message.from_user.id)
     session_id = uuid.uuid5(uuid.NAMESPACE_DNS, patient_ph_no)
-    patient_message = (
-        whatsapp_webhook_request.entry[0].changes[0].value.messages[0].text.body
-    )
+    patient_message = telegram_webhook_request.message.text
 
     patient = await patient_service.get_patient_by_patient_ph_no(patient_ph_no)
     if not patient:
@@ -187,7 +192,8 @@ async def get_response(
 
     await chat_history_service.add_message(ai_message)
 
-    whatsapp_client.send_text_message(to="918610432661", message=response.final_output)
+    # whatsapp_client.send_text_message(to=WHATSAPP_RECIPIENT_NUMBER, message=response.final_output)
+    telegram_client.send_message(patient_ph_no, response.final_output)
 
     return response.final_output
 

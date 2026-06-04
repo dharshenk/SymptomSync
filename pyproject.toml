@@ -22,6 +22,10 @@ dependencies = [
     "fastapi",
     "pre-commit>=4.5.1",
     "reportlab>=4.4.10",
+    "opentelemetry-distro>=0.63b1",
+    "opentelemetry-exporter-otlp>=1.42.1",
+    "opentelemetry-exporter-otlp-proto-http>=1.42.1",
+    "opentelemetry-instrumentation-fastapi>=0.63b1",
 ]
 
 [dependency-groups]

@@ -1,14 +1,47 @@
 from dotenv import load_dotenv
 from pydantic import BaseModel
 import logging
+import json
 import psycopg2
 import psycopg2.pool
 from contextlib import contextmanager
 from psycopg2.extras import RealDictCursor
 from typing import Any
 from psycopg2.extensions import connection as psycopg2_connection
+from opentelemetry import trace
 
 load_dotenv()
+tracer = trace.get_tracer("symptom.sync.tracer")
+
+
+def _serialize_db_value(value: Any) -> str:
+    return json.dumps(value, default=str)
+
+
+def _get_query_operation(query: str) -> str:
+    stripped_query = query.strip()
+    if not stripped_query:
+        return "UNKNOWN"
+    return stripped_query.split(maxsplit=1)[0].upper()
+
+
+def _set_db_input_attributes(span, query: str, params: Any = None):
+    span.set_attribute("db.system.name", "postgresql")
+    span.set_attribute("db.operation.name", _get_query_operation(query))
+    span.set_attribute("db.query.text", query)
+    if params is not None:
+        span.set_attribute("db.query.parameters", _serialize_db_value(params))
+
+
+def _set_db_output_attributes(span, output: Any):
+    span.set_attribute("db.response.output", _serialize_db_value(output))
+
+    if isinstance(output, list):
+        span.set_attribute("db.response.row_count", len(output))
+    elif isinstance(output, int):
+        span.set_attribute("db.response.rows_affected", output)
+    elif output is None:
+        span.set_attribute("db.response.row_count", 0)
 
 
 class DatabaseConfig(BaseModel):
@@ -107,29 +140,53 @@ class PostgresSQLClient:
         if fetch not in ("all", "one"):
             raise ValueError("Fetch mode must be either 'all' or 'one'")
 
-        with self.get_connection() as conn:
-            with conn.cursor(cursor_factory=RealDictCursor) as cursor:
-                cursor.execute(query, params)
-                if fetch == "all":
-                    return [dict(row) for row in cursor.fetchall()]
-                elif fetch == "one":
-                    row = cursor.fetchone()
-                    return [dict(row)] if row else None
-                return None
+        with tracer.start_as_current_span("db.execute_query") as span:
+            _set_db_input_attributes(span, query, params)
+            span.set_attribute("db.query.fetch_mode", fetch)
+            span.set_attribute("db.namespace", self.config.database)
+
+            with self.get_connection() as conn:
+                with conn.cursor(cursor_factory=RealDictCursor) as cursor:
+                    cursor.execute(query, params)
+                    if fetch == "all":
+                        result = [dict(row) for row in cursor.fetchall()]
+                    elif fetch == "one":
+                        row = cursor.fetchone()
+                        result = [dict(row)] if row else None
+                    else:
+                        result = None
+
+            _set_db_output_attributes(span, result)
+            return result
 
     def execute_command(self, query: str, params: tuple | dict | None = None) -> int:
 
-        with self.transaction() as conn:
-            with conn.cursor() as cursor:
-                cursor.execute(query, params)
-                return cursor.rowcount
+        with tracer.start_as_current_span("db.execute_command") as span:
+            _set_db_input_attributes(span, query, params)
+            span.set_attribute("db.namespace", self.config.database)
+
+            with self.transaction() as conn:
+                with conn.cursor() as cursor:
+                    cursor.execute(query, params)
+                    result = cursor.rowcount
+
+            _set_db_output_attributes(span, result)
+            return result
 
     def execute_many(self, query: str, params_list: list[tuple | dict]) -> int:
 
-        with self.transaction() as conn:
-            with conn.cursor() as cursor:
-                cursor.executemany(query, params_list)
-                return cursor.rowcount
+        with tracer.start_as_current_span("db.execute_many") as span:
+            _set_db_input_attributes(span, query, params_list)
+            span.set_attribute("db.namespace", self.config.database)
+            span.set_attribute("db.query.batch_size", len(params_list))
+
+            with self.transaction() as conn:
+                with conn.cursor() as cursor:
+                    cursor.executemany(query, params_list)
+                    result = cursor.rowcount
+
+            _set_db_output_attributes(span, result)
+            return result
 
     def call_procedure(
         self, proc_name: str, params: list | None = None
@@ -144,13 +201,24 @@ class PostgresSQLClient:
         Returns:
             Procedure results
         """
-        with self.get_connection() as conn:
-            with conn.cursor() as cursor:
-                cursor.callproc(proc_name, params or [])
-                try:
-                    return cursor.fetchall()
-                except psycopg2.ProgrammingError:
-                    return None
+        with tracer.start_as_current_span("db.call_procedure") as span:
+            span.set_attribute("db.system.name", "postgresql")
+            span.set_attribute("db.operation.name", "CALL")
+            span.set_attribute("db.namespace", self.config.database)
+            span.set_attribute("db.stored_procedure.name", proc_name)
+            if params is not None:
+                span.set_attribute("db.query.parameters", _serialize_db_value(params))
+
+            with self.get_connection() as conn:
+                with conn.cursor() as cursor:
+                    cursor.callproc(proc_name, params or [])
+                    try:
+                        result = cursor.fetchall()
+                    except psycopg2.ProgrammingError:
+                        result = None
+
+            _set_db_output_attributes(span, result)
+            return result
 
     def close(self):
         """Close all connections in the pool."""

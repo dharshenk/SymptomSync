@@ -73,34 +73,32 @@ async def get_available_slots(
         )
         span.set_attribute("agent.tool.available_slots_count", len(slots))
 
-        # Header for the Markdown response
-        date_header = appointment_date.strftime("%A, %B %d, %Y")
+        date_str = appointment_date.strftime("%A, %B %d, %Y")
 
+        # Handle the empty state cleanly in JSON
         if not slots:
-            output = f"### Status: No Availability\nNo slots are available for **{date_header}**. Please suggest another date to the patient."
+            data = {
+                "status": "No Availability",
+                "date": date_str,
+                "available_start_times": [],
+                "instructions": "No slots are available for this date. Politely inform the patient and ask them to suggest another date.",
+            }
+            output = json.dumps(data)
             _set_tool_output_attributes(span, output)
             return output
 
-        # Build the Markdown Table
-        markdown_lines = [
-            f"### Available Slots for {date_header}",
-            "",
-            "| Start Time | End Time |",
-            "| :--------- | :------- |",
-        ]
+        # Extract only the start times as clean user-friendly strings
+        start_times = [slot["slot_start"].strftime("%I:%M %p") for slot in slots]
 
-        for slot in slots:
-            # Converting datetime.time objects to user-friendly strings
-            start = slot["slot_start"].strftime("%I:%M %p")
-            end = slot["slot_end"].strftime("%I:%M %p")
-            markdown_lines.append(f"| {start} | {end} |")
+        # Build a structured data payload
+        data = {
+            "status": "Success",
+            "date": date_str,
+            "available_start_times": start_times,
+            "instructions": "Present these start times to the patient as choices and ask which one they prefer. Do not mention any other times.",
+        }
 
-        # Final footer instruction for the LLM
-        markdown_lines.append(
-            "\n**Instructions:** Present these times to the patient and ask which one they prefer."
-        )
-
-        output = "\n".join(markdown_lines)
+        output = json.dumps(data, indent=2)
         _set_tool_output_attributes(span, output)
         return output
 

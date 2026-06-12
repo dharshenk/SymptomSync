@@ -131,14 +131,26 @@ async def get_response(
     ],
 ):
     with tracer.start_as_current_span("whatsapp_webhook.get_response") as span:
+        with tracer.start_as_current_span("http.request") as http_request_span:
+            route = request.scope.get("route")
+            route_path = getattr(route, "path", request.url.path)
+            http_request_span.set_attribute("http.request.method", request.method)
+            http_request_span.set_attribute("http.route", route_path)
+            if request.client:
+                span.set_attribute("client.address", request.client.host)
+                span.set_attribute("client.port", request.client.port)
+            http_request_span.add_event(
+                "http.request.received",
+                {
+                    "http.request.method": request.method,
+                    "url.path": request.url.path,
+                },
+            )
+
         patient_ph_no = str(telegram_webhook_request.message.from_user.id)
         session_id = uuid.uuid5(uuid.NAMESPACE_DNS, patient_ph_no)
         patient_message = telegram_webhook_request.message.text
-        route = request.scope.get("route")
-        route_path = getattr(route, "path", request.url.path)
 
-        span.set_attribute("http.request.method", request.method)
-        span.set_attribute("http.route", route_path)
         span.set_attribute("patient_ph_no", patient_ph_no)
         span.set_attribute("session_id", str(session_id))
         span.set_attribute("patient_message", patient_message)
@@ -151,18 +163,6 @@ async def get_response(
         )
         span.set_attribute(
             "telegram.chat_type", telegram_webhook_request.message.chat.type
-        )
-
-        if request.client:
-            span.set_attribute("client.address", request.client.host)
-            span.set_attribute("client.port", request.client.port)
-
-        span.add_event(
-            "http.request.received",
-            {
-                "http.request.method": request.method,
-                "url.path": request.url.path,
-            },
         )
 
         with tracer.start_as_current_span("patient.get_or_create") as patient_span:

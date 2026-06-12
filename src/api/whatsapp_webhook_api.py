@@ -193,8 +193,10 @@ async def get_response(
             previous_messages = await chat_history_service.get_session_messages(
                 session_id=chat_session.id
             )
+
             history_span.set_attribute(
-                "chat_history.previous_message_count", len(previous_messages)
+                "chat_history.previous_message_count",
+                len(previous_messages) if previous_messages else 0,
             )
 
         user_message = ChatMessage(

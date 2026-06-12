@@ -12,8 +12,7 @@ from src.api.clients.telegram_client import TelegramClient, TelegramConfig
 from src.api.services.patient_service import PatientService
 from agents import Agent, Runner
 from dotenv import load_dotenv
-from fastapi import Depends, APIRouter, Request, Query, HTTPException
-from fastapi.responses import PlainTextResponse
+from fastapi import Depends, APIRouter, Request
 import uuid
 import os
 from datetime import date
@@ -137,15 +136,9 @@ async def get_response(
         patient_message = telegram_webhook_request.message.text
         route = request.scope.get("route")
         route_path = getattr(route, "path", request.url.path)
-        http_version = request.scope.get("http_version")
 
         span.set_attribute("http.request.method", request.method)
         span.set_attribute("http.route", route_path)
-        span.set_attribute("url.path", request.url.path)
-        span.set_attribute("url.scheme", request.url.scheme)
-        span.set_attribute("network.protocol.name", "http")
-        if http_version:
-            span.set_attribute("network.protocol.version", http_version)
         span.set_attribute("patient_ph_no", patient_ph_no)
         span.set_attribute("session_id", str(session_id))
         span.set_attribute("patient_message", patient_message)
@@ -163,14 +156,6 @@ async def get_response(
         if request.client:
             span.set_attribute("client.address", request.client.host)
             span.set_attribute("client.port", request.client.port)
-
-        user_agent = request.headers.get("user-agent")
-        if user_agent:
-            span.set_attribute("user_agent.original", user_agent)
-
-        content_length = request.headers.get("content-length")
-        if content_length and content_length.isdigit():
-            span.set_attribute("http.request.body.size", int(content_length))
 
         span.add_event(
             "http.request.received",
@@ -302,9 +287,6 @@ async def get_response(
             http_response_span.set_attribute(
                 "http.response.body.size", len(response.final_output or "")
             )
-            http_response_span.set_attribute(
-                "http.response.body", response.final_output or ""
-            )
             http_response_span.add_event(
                 "http.response.created",
                 {
@@ -316,19 +298,19 @@ async def get_response(
         return response.final_output
 
 
-@router.get("/webhook")
-async def verify(
-    mode: str = Query(None, alias="hub.mode"),
-    token: str = Query(None, alias="hub.verify_token"),
-    challenge: str = Query(None, alias="hub.challenge"),
-):
-    if mode and token:
-        if mode == "subscribe" and token == VERIFY_TOKEN:  # however you load config
-            # logging.info("WEBHOOK_VERIFIED")
-            return PlainTextResponse(content=challenge, status_code=200)
-        else:
-            # logging.info("VERIFICATION_FAILED")
-            raise HTTPException(status_code=403, detail="Verification failed")
-    else:
-        # logging.info("MISSING_PARAMETER")
-        raise HTTPException(status_code=400, detail="Missing parameters")
+# @router.get("/webhook")
+# async def verify(
+#     mode: str = Query(None, alias="hub.mode"),
+#     token: str = Query(None, alias="hub.verify_token"),
+#     challenge: str = Query(None, alias="hub.challenge"),
+# ):
+#     if mode and token:
+#         if mode == "subscribe" and token == VERIFY_TOKEN:  # however you load config
+#             # logging.info("WEBHOOK_VERIFIED")
+#             return PlainTextResponse(content=challenge, status_code=200)
+#         else:
+#             # logging.info("VERIFICATION_FAILED")
+#             raise HTTPException(status_code=403, detail="Verification failed")
+#     else:
+#         # logging.info("MISSING_PARAMETER")
+#         raise HTTPException(status_code=400, detail="Missing parameters")

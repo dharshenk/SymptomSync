@@ -1,0 +1,58 @@
+# Version control
+.git
+.gitignore
+
+# Virtual environments
+.venv
+venv/
+env/
+
+# IDE / Editor
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Python caches
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+
+# Test & CI
+src/tests/
+htmlcov/
+.coverage
+coverage.xml
+
+# Build artifacts
+build/
+dist/
+*.egg-info/
+
+# Pre-commit / tooling config
+.pre-commit-config.yaml
+.secrets.baseline
+
+# Docker (avoid recursive context)
+Dockerfile
+docker-compose.yml
+.dockerignore
+
+# Environment files (passed at runtime via env_file)
+.env
+.env.*
+!.env.sample
+
+# Docs & misc
+docs/
+*.md
+LICENSE
+
+# Generated outputs
+generated_reports/
+
+# Dev container config
+.devcontainer/

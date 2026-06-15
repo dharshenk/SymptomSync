@@ -1,6 +1,6 @@
 import pytest
 from unittest.mock import patch, MagicMock
-from api.clients.redis_client import (
+from src.api.clients.redis_client import (
     RedisClient,
     RedisConfig,
     RedisConnectionError,
@@ -29,9 +29,10 @@ def test_redis_config_instantiation(redis_config):
 
 def test_redis_client_initialization_success(redis_config):
     # Test successful initialization and health check
-    with patch("api.clients.redis_client.redis.Redis") as mock_redis, patch(
-        "api.clients.redis_client.redis.ConnectionPool"
-    ) as mock_pool:
+    with (
+        patch("api.clients.redis_client.redis.Redis") as mock_redis,
+        patch("api.clients.redis_client.redis.ConnectionPool") as mock_pool,
+    ):
         mock_instance = MagicMock()
         mock_instance.ping.return_value = True
         mock_redis.return_value = mock_instance
@@ -43,9 +44,10 @@ def test_redis_client_initialization_success(redis_config):
 
 def test_redis_client_initialization_failure(redis_config):
     # Test initialization failure raises RedisConnectionError
-    with patch("api.clients.redis_client.redis.Redis") as mock_redis, patch(
-        "api.clients.redis_client.redis.ConnectionPool"
-    ) as mock_pool:
+    with (
+        patch("api.clients.redis_client.redis.Redis") as mock_redis,
+        patch("api.clients.redis_client.redis.ConnectionPool") as mock_pool,
+    ):
         mock_redis.side_effect = Exception("Connection failed")
         mock_pool.return_value = MagicMock()
         with pytest.raises(RedisConnectionError):
@@ -54,9 +56,10 @@ def test_redis_client_initialization_failure(redis_config):
 
 def test_redis_client_context_manager(redis_config):
     # Test context manager enters and exits, calling close
-    with patch("api.clients.redis_client.redis.Redis") as mock_redis, patch(
-        "api.clients.redis_client.redis.ConnectionPool"
-    ) as mock_pool:
+    with (
+        patch("api.clients.redis_client.redis.Redis") as mock_redis,
+        patch("api.clients.redis_client.redis.ConnectionPool") as mock_pool,
+    ):
         mock_instance = MagicMock()
         mock_instance.ping.return_value = True
         mock_redis.return_value = mock_instance
@@ -69,9 +72,10 @@ def test_redis_client_context_manager(redis_config):
 
 def test_get_connection_yields_and_releases(redis_config):
     # Test get_connection yields a connection and releases it
-    with patch("api.clients.redis_client.redis.Redis") as mock_redis, patch(
-        "api.clients.redis_client.redis.ConnectionPool"
-    ) as mock_pool:
+    with (
+        patch("api.clients.redis_client.redis.Redis") as mock_redis,
+        patch("api.clients.redis_client.redis.ConnectionPool") as mock_pool,
+    ):
         mock_instance = MagicMock()
         mock_instance.ping.return_value = True
         mock_redis.return_value = mock_instance
@@ -90,9 +94,10 @@ def test_get_connection_yields_and_releases(redis_config):
 # --- Serialization/Deserialization ---
 def test_serialize_and_deserialize_value(redis_config):
     # Patch Redis and ConnectionPool to avoid real connection
-    with patch("api.clients.redis_client.redis.Redis") as mock_redis, patch(
-        "api.clients.redis_client.redis.ConnectionPool"
-    ) as mock_pool:
+    with (
+        patch("api.clients.redis_client.redis.Redis") as mock_redis,
+        patch("api.clients.redis_client.redis.ConnectionPool") as mock_pool,
+    ):
         mock_redis.return_value = MagicMock()
         mock_pool.return_value = MagicMock()
         client = RedisClient(redis_config)
@@ -115,9 +120,10 @@ def test_serialize_and_deserialize_value(redis_config):
 
 # --- String Operations ---
 def test_set_and_get(redis_config):
-    with patch("api.clients.redis_client.redis.Redis") as mock_redis, patch(
-        "api.clients.redis_client.redis.ConnectionPool"
-    ) as mock_pool:
+    with (
+        patch("api.clients.redis_client.redis.Redis") as mock_redis,
+        patch("api.clients.redis_client.redis.ConnectionPool") as mock_pool,
+    ):
         mock_instance = MagicMock()
         mock_instance.set.return_value = True
         mock_instance.get.return_value = b"value"
@@ -129,9 +135,10 @@ def test_set_and_get(redis_config):
 
 
 def test_delete_and_exists(redis_config):
-    with patch("api.clients.redis_client.redis.Redis") as mock_redis, patch(
-        "api.clients.redis_client.redis.ConnectionPool"
-    ) as mock_pool:
+    with (
+        patch("api.clients.redis_client.redis.Redis") as mock_redis,
+        patch("api.clients.redis_client.redis.ConnectionPool") as mock_pool,
+    ):
         mock_instance = MagicMock()
         mock_instance.delete.return_value = 1
         mock_instance.exists.return_value = True
@@ -143,9 +150,10 @@ def test_delete_and_exists(redis_config):
 
 
 def test_expire_and_ttl(redis_config):
-    with patch("api.clients.redis_client.redis.Redis") as mock_redis, patch(
-        "api.clients.redis_client.redis.ConnectionPool"
-    ) as mock_pool:
+    with (
+        patch("api.clients.redis_client.redis.Redis") as mock_redis,
+        patch("api.clients.redis_client.redis.ConnectionPool") as mock_pool,
+    ):
         mock_instance = MagicMock()
         mock_instance.expire.return_value = True
         mock_instance.ttl.return_value = 100
@@ -158,9 +166,10 @@ def test_expire_and_ttl(redis_config):
 
 # --- Hash Operations ---
 def test_hset_and_hget(redis_config):
-    with patch("api.clients.redis_client.redis.Redis") as mock_redis, patch(
-        "api.clients.redis_client.redis.ConnectionPool"
-    ) as mock_pool:
+    with (
+        patch("api.clients.redis_client.redis.Redis") as mock_redis,
+        patch("api.clients.redis_client.redis.ConnectionPool") as mock_pool,
+    ):
         mock_instance = MagicMock()
         mock_instance.hset.return_value = 1
         mock_instance.hget.return_value = b"val"
@@ -172,9 +181,10 @@ def test_hset_and_hget(redis_config):
 
 
 def test_hgetall_and_hdel(redis_config):
-    with patch("api.clients.redis_client.redis.Redis") as mock_redis, patch(
-        "api.clients.redis_client.redis.ConnectionPool"
-    ) as mock_pool:
+    with (
+        patch("api.clients.redis_client.redis.Redis") as mock_redis,
+        patch("api.clients.redis_client.redis.ConnectionPool") as mock_pool,
+    ):
         mock_instance = MagicMock()
         mock_instance.hgetall.return_value = {b"f": b"v"}
         mock_instance.hdel.return_value = 1
@@ -187,9 +197,10 @@ def test_hgetall_and_hdel(redis_config):
 
 # --- List Operations ---
 def test_lpush_and_rpush(redis_config):
-    with patch("api.clients.redis_client.redis.Redis") as mock_redis, patch(
-        "api.clients.redis_client.redis.ConnectionPool"
-    ) as mock_pool:
+    with (
+        patch("api.clients.redis_client.redis.Redis") as mock_redis,
+        patch("api.clients.redis_client.redis.ConnectionPool") as mock_pool,
+    ):
         mock_instance = MagicMock()
         mock_instance.lpush.return_value = 2
         mock_instance.rpush.return_value = 2
@@ -201,9 +212,10 @@ def test_lpush_and_rpush(redis_config):
 
 
 def test_lpop_and_rpop(redis_config):
-    with patch("api.clients.redis_client.redis.Redis") as mock_redis, patch(
-        "api.clients.redis_client.redis.ConnectionPool"
-    ) as mock_pool:
+    with (
+        patch("api.clients.redis_client.redis.Redis") as mock_redis,
+        patch("api.clients.redis_client.redis.ConnectionPool") as mock_pool,
+    ):
         mock_instance = MagicMock()
         mock_instance.lpop.return_value = b"left"
         mock_instance.rpop.return_value = b"right"
@@ -215,9 +227,10 @@ def test_lpop_and_rpop(redis_config):
 
 
 def test_llen(redis_config):
-    with patch("api.clients.redis_client.redis.Redis") as mock_redis, patch(
-        "api.clients.redis_client.redis.ConnectionPool"
-    ) as mock_pool:
+    with (
+        patch("api.clients.redis_client.redis.Redis") as mock_redis,
+        patch("api.clients.redis_client.redis.ConnectionPool") as mock_pool,
+    ):
         mock_instance = MagicMock()
         mock_instance.llen.return_value = 3
         mock_redis.return_value = mock_instance
@@ -228,9 +241,10 @@ def test_llen(redis_config):
 
 # --- Set Operations ---
 def test_sadd_and_smembers(redis_config):
-    with patch("api.clients.redis_client.redis.Redis") as mock_redis, patch(
-        "api.clients.redis_client.redis.ConnectionPool"
-    ) as mock_pool:
+    with (
+        patch("api.clients.redis_client.redis.Redis") as mock_redis,
+        patch("api.clients.redis_client.redis.ConnectionPool") as mock_pool,
+    ):
         mock_instance = MagicMock()
         mock_instance.sadd.return_value = 2
         mock_instance.smembers.return_value = {b"a", b"b"}
@@ -242,9 +256,10 @@ def test_sadd_and_smembers(redis_config):
 
 
 def test_srem(redis_config):
-    with patch("api.clients.redis_client.redis.Redis") as mock_redis, patch(
-        "api.clients.redis_client.redis.ConnectionPool"
-    ) as mock_pool:
+    with (
+        patch("api.clients.redis_client.redis.Redis") as mock_redis,
+        patch("api.clients.redis_client.redis.ConnectionPool") as mock_pool,
+    ):
         mock_instance = MagicMock()
         mock_instance.srem.return_value = 1
         mock_redis.return_value = mock_instance
@@ -255,9 +270,10 @@ def test_srem(redis_config):
 
 # --- Utility Methods ---
 def test_keys_and_flushdb(redis_config):
-    with patch("api.clients.redis_client.redis.Redis") as mock_redis, patch(
-        "api.clients.redis_client.redis.ConnectionPool"
-    ) as mock_pool:
+    with (
+        patch("api.clients.redis_client.redis.Redis") as mock_redis,
+        patch("api.clients.redis_client.redis.ConnectionPool") as mock_pool,
+    ):
         mock_instance = MagicMock()
         mock_instance.keys.return_value = [b"a", b"b"]
         mock_instance.flushdb.return_value = True
@@ -270,9 +286,10 @@ def test_keys_and_flushdb(redis_config):
 
 # --- Edge Cases ---
 def test_set_and_get_none_value(redis_config):
-    with patch("api.clients.redis_client.redis.Redis") as mock_redis, patch(
-        "api.clients.redis_client.redis.ConnectionPool"
-    ) as mock_pool:
+    with (
+        patch("api.clients.redis_client.redis.Redis") as mock_redis,
+        patch("api.clients.redis_client.redis.ConnectionPool") as mock_pool,
+    ):
         mock_instance = MagicMock()
         mock_instance.set.return_value = True
         mock_instance.get.return_value = None

@@ -1,6 +1,6 @@
 import os
 import pytest
-from api.clients.redis_client import RedisConfig, RedisClient
+from src.api.clients.redis_client import RedisConfig, RedisClient
 from dotenv import load_dotenv, find_dotenv
 
 # Load environment variables from .env file

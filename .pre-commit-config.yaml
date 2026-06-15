@@ -9,28 +9,21 @@ repos:
     rev: 25.1.0
     hooks:
       - id: black
-  - repo: https://github.com/jazzband/pip-tools
-    rev: 7.4.1
+  - repo: https://github.com/astral-sh/uv-pre-commit
+    rev: 0.6.0
     hooks:
-      - id: pip-compile
-        name: pip-compile setup.py
-        files: ^(setup\.py|requirements\.txt)$
-      - id: pip-compile
-        name: pip-compile requirements-dev.in
-        args: [requirements-dev.in]
-        files: ^requirements-dev\.(in|txt)$
-      - id: pip-compile
-        name: pip-compile requirements-lint.in
-        args: [requirements-lint.in]
-        files: ^requirements-lint\.(in|txt)$
-      - id: pip-compile
-        name: pip-compile requirements.in
-        args: [src/api/requirements.in]
-        files: ^requirements\.(in|txt)$
+      - id: uv-lock
+        name: uv lock root project
+        files: ^pyproject\.toml$
+      - id: uv-lock
+        name: uv lock API project
+        args: [--directory, src/api]
+        files: ^src/api/pyproject\.toml$
   - repo: https://github.com/pre-commit/pre-commit-hooks
     rev: v5.0.0
     hooks:
       - id: check-added-large-files
+        args: ["--maxkb", "2048"]
       - id: check-case-conflict
       - id: check-merge-conflict
       - id: check-yaml
@@ -50,11 +43,6 @@ repos:
     hooks:
       - id: pyupgrade
         args: [--py310-plus]
-
-  - repo: https://github.com/pre-commit/mirrors-mypy
-    rev: v1.17.0
-    hooks:
-      - id: mypy
 
   - repo: https://github.com/codespell-project/codespell
     rev: v2.4.1

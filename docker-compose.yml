@@ -1,6 +1,23 @@
-version: '3.8'
-
 services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: symptom-sync-app
+    env_file:
+      - .env
+    ports:
+      - "8888:8000"
+    volumes:
+      - ./src:/app/src
+    command: ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000", "--app-dir", "src", "--reload"]
+    depends_on:
+      - postgres-db
+      - redis-db
+    networks:
+      - symptom_sync_backend
+    restart: unless-stopped
+
   postgres-db:
     image: postgres:17.5-alpine3.22
     container_name: postgres-db
@@ -13,7 +30,7 @@ services:
     volumes:
       - pgdata:/var/lib/postgresql/data
     networks:
-      - symptomSync_backend
+      - symptom_sync_backend
     restart: unless-stopped
 
   redis-db:
@@ -25,7 +42,7 @@ services:
     volumes:
       - redisdata:/data
     networks:
-      - symptomSync_backend
+      - symptom_sync_backend
     restart: unless-stopped
 
 volumes:
@@ -33,4 +50,6 @@ volumes:
   redisdata:
 
 networks:
-  symptomSync_backend:
+  symptom_sync_backend:
+    name: symptom_sync_backend
+    driver: bridge

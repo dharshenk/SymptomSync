@@ -1,3 +1,4 @@
+-- use this command to execute this script in the postgres container: docker exec -i <postgre_container_name> psql -U <username> -d <database> < /path/to/script.sql
 -- =====================================================
 -- Symptom Sync Simplified Database Schema
 -- PostgreSQL Database Design for AI-Assisted Healthcare
@@ -11,16 +12,14 @@ CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 -- =====================================================
 
 -- Patient details
-CREATE TABLE patients (
+CREATE TABLE if not exists patients (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    patient_id VARCHAR(20) UNIQUE NOT NULL, -- human-readable patient ID like PAT-001
-    first_name VARCHAR(100) NOT NULL,
-    last_name VARCHAR(100) NOT NULL,
+    patient_ph_no VARCHAR(20) UNIQUE NOT NULL, -- human-readable patient phone number
+    first_name VARCHAR(100),
+    last_name VARCHAR(100),
     email VARCHAR(255) UNIQUE,
-    phone_number VARCHAR(20) UNIQUE NOT NULL,
-    whatsapp_number VARCHAR(20), -- for bot communication
     date_of_birth DATE,
-    gender VARCHAR(20) CHECK (gender IN ('male', 'female', 'other', 'prefer_not_to_say')),
+    gender VARCHAR(20) CHECK (gender IN ('male', 'female', 'prefer_not_to_say')),
     emergency_contact_name VARCHAR(100),
     emergency_contact_phone VARCHAR(20),
     is_active BOOLEAN DEFAULT true,
@@ -33,9 +32,8 @@ CREATE TABLE patients (
 -- =====================================================
 
 -- Doctor details
-CREATE TABLE doctors (
+CREATE TABLE if not exists doctors (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    doctor_id VARCHAR(20) UNIQUE NOT NULL, -- human-readable doctor ID like DOC-001
     first_name VARCHAR(100) NOT NULL,
     last_name VARCHAR(100) NOT NULL,
     email VARCHAR(255) UNIQUE NOT NULL,
@@ -58,7 +56,7 @@ CREATE TABLE doctors (
 -- =====================================================
 
 -- Doctor's weekly availability schedule
-CREATE TABLE doctor_availability (
+CREATE TABLE if not exists doctor_availability (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     doctor_id UUID REFERENCES doctors(id) ON DELETE CASCADE,
     day_of_week INTEGER CHECK (day_of_week BETWEEN 0 AND 6), -- 0=Sunday, 6=Saturday
@@ -72,7 +70,7 @@ CREATE TABLE doctor_availability (
 );
 
 -- Doctor unavailability (holidays, leaves, specific dates)
-CREATE TABLE doctor_unavailability (
+CREATE TABLE if not exists doctor_unavailability (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     doctor_id UUID REFERENCES doctors(id) ON DELETE CASCADE,
     unavailable_date DATE NOT NULL,
@@ -87,9 +85,8 @@ CREATE TABLE doctor_unavailability (
 -- =====================================================
 
 -- AI bot conversation sessions with patients
-CREATE TABLE chat_sessions (
+CREATE TABLE if not exists chat_sessions (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    session_id VARCHAR(50) UNIQUE NOT NULL, -- external session identifier
     patient_id UUID REFERENCES patients(id) ON DELETE CASCADE,
     session_status VARCHAR(20) DEFAULT 'active' CHECK (session_status IN ('active', 'completed', 'abandoned')),
     started_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
@@ -101,7 +98,7 @@ CREATE TABLE chat_sessions (
 );
 
 -- Individual messages within chat sessions
-CREATE TABLE chat_messages (
+CREATE TABLE if not exists chat_messages (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     session_id UUID REFERENCES chat_sessions(id) ON DELETE CASCADE,
     message_sequence INTEGER NOT NULL, -- order of messages in session
@@ -120,9 +117,9 @@ CREATE TABLE chat_messages (
 -- =====================================================
 
 -- Appointments between patients and doctors
-CREATE TABLE appointments (
+CREATE TABLE if not exists appointments (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    appointment_number VARCHAR(20) UNIQUE NOT NULL, -- human-readable like APT-001
+    appointment_number VARCHAR(30) UNIQUE NOT NULL, -- human-readable like APT-001
     patient_id UUID REFERENCES patients(id) ON DELETE CASCADE,
     doctor_id UUID REFERENCES doctors(id) ON DELETE CASCADE,
     chat_session_id UUID REFERENCES chat_sessions(id), -- link to originating chat session
@@ -148,11 +145,75 @@ CREATE TABLE appointments (
 );
 
 -- =====================================================
+-- APPOINTMENT BOOKING FUNCTION
+-- =====================================================
+
+CREATE OR REPLACE FUNCTION book_appointment(
+    p_appointment_number VARCHAR(30),
+    p_patient_id UUID,
+    p_doctor_id UUID,
+    p_appointment_date DATE,
+    p_start_time TIME,
+    p_end_time TIME,
+    p_chat_session_id UUID DEFAULT NULL,
+    p_appointment_type VARCHAR(30) DEFAULT 'consultation',
+    p_consultation_fee DECIMAL(10,2) DEFAULT NULL,
+    p_payment_status VARCHAR(20) DEFAULT 'pending',
+    p_patient_notes TEXT DEFAULT NULL,
+    p_doctor_notes TEXT DEFAULT NULL
+) RETURNS UUID AS $$
+DECLARE
+    v_appointment_id UUID;
+BEGIN
+    IF EXISTS (
+        SELECT 1 FROM appointments
+        WHERE doctor_id = p_doctor_id
+          AND appointment_date = p_appointment_date
+          AND start_time = p_start_time
+          AND status NOT IN ('cancelled', 'no_show')
+    ) THEN
+        RAISE EXCEPTION 'Cannot book appointment: start_time % already booked for doctor % on %',
+            p_start_time, p_doctor_id, p_appointment_date;
+    END IF;
+
+    INSERT INTO appointments (
+        appointment_number,
+        patient_id,
+        doctor_id,
+        chat_session_id,
+        appointment_date,
+        start_time,
+        end_time,
+        appointment_type,
+        consultation_fee,
+        payment_status,
+        patient_notes,
+        doctor_notes
+    ) VALUES (
+        p_appointment_number,
+        p_patient_id,
+        p_doctor_id,
+        p_chat_session_id,
+        p_appointment_date,
+        p_start_time,
+        p_end_time,
+        p_appointment_type,
+        p_consultation_fee,
+        p_payment_status,
+        p_patient_notes,
+        p_doctor_notes
+    ) RETURNING id INTO v_appointment_id;
+
+    RETURN v_appointment_id;
+END;
+$$ LANGUAGE plpgsql;
+
+-- =====================================================
 -- SYSTEM CONFIGURATION
 -- =====================================================
 
 -- System-wide configuration settings
-CREATE TABLE system_config (
+CREATE TABLE if not exists system_config (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     config_key VARCHAR(100) UNIQUE NOT NULL,
     config_value TEXT,
@@ -167,13 +228,11 @@ CREATE TABLE system_config (
 
 -- Patient indexes
 CREATE INDEX idx_patients_email ON patients(email);
-CREATE INDEX idx_patients_phone ON patients(phone_number);
-CREATE INDEX idx_patients_patient_id ON patients(patient_id);
+CREATE INDEX idx_patients_patient_ph_no ON patients(patient_ph_no);
 CREATE INDEX idx_patients_active ON patients(is_active);
 
 -- Doctor indexes
 CREATE INDEX idx_doctors_email ON doctors(email);
-CREATE INDEX idx_doctors_doctor_id ON doctors(doctor_id);
 CREATE INDEX idx_doctors_specialization ON doctors(specialization);
 CREATE INDEX idx_doctors_active ON doctors(is_active);
 
@@ -187,7 +246,7 @@ CREATE INDEX idx_doctor_unavailability_doctor_date ON doctor_unavailability(doct
 CREATE INDEX idx_chat_sessions_patient ON chat_sessions(patient_id);
 CREATE INDEX idx_chat_sessions_status ON chat_sessions(session_status);
 CREATE INDEX idx_chat_sessions_started ON chat_sessions(started_at);
-CREATE INDEX idx_chat_sessions_session_id ON chat_sessions(session_id);
+CREATE INDEX idx_chat_sessions_id ON chat_sessions(id);
 
 -- Chat message indexes
 CREATE INDEX idx_chat_messages_session ON chat_messages(session_id);

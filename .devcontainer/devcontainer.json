@@ -2,8 +2,10 @@
   "name": "Python Dev Container",
   "image": "mcr.microsoft.com/devcontainers/python:3.11-bookworm",
   "postCreateCommand": "bash .devcontainer/post-create.sh",
+  "workspaceMount": "source=${localWorkspaceFolder},target=/workspaces/SymptomSync,type=bind",
+  "workspaceFolder": "/workspaces/SymptomSync",
   "features": {
-    "ghcr.io/devcontainers/features/docker-outside-of-docker:1.6.3": {}
+    "ghcr.io/devcontainers/features/docker-outside-of-docker:1.6.5": {}
   },
   "customizations": {
     "vscode": {

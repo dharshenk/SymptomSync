@@ -1,0 +1,46 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "symptom-sync"
+version = "0.1.0"
+description = "SymptomSync - AI-powered symptom tracking system"
+requires-python = ">=3.10"
+dependencies = [
+    "redis",
+    "pydantic",
+    "backoff",
+    "httpx",
+    "httpx[http2]",
+    "requests",
+    "types-requests",
+    "psycopg2-binary",
+    "openai-agents",
+    "openai-agents[litellm]",
+    "pydantic[email]",
+    "fastapi",
+    "pre-commit>=4.5.1",
+    "reportlab>=4.4.10",
+    "opentelemetry-distro>=0.63b1",
+    "opentelemetry-exporter-otlp>=1.42.1",
+    "opentelemetry-exporter-otlp-proto-http>=1.42.1",
+    "opentelemetry-instrumentation-fastapi>=0.63b1",
+]
+
+[dependency-groups]
+dev = [
+    "pre-commit",
+    "pip-tools",
+    "black",
+    "pytest",
+    "pytest-cov",
+    "python-dotenv",
+    "ruff",
+    "pytest",
+    "pytest-cov",
+    "pytest-asyncio>=1.3.0",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src"]

@@ -13,20 +13,7 @@ from src.api.services.function_tool_service import (
     get_available_slots,
 )
 
-from opentelemetry.sdk.resources import SERVICE_NAME, Resource
-from opentelemetry import trace
-from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExporter
-from opentelemetry.sdk.trace import TracerProvider
-from opentelemetry.sdk.trace.export import BatchSpanProcessor
-
-resource = Resource.create(attributes={SERVICE_NAME: "symptom-sync"})
-
-tracerProvider = TracerProvider(resource=resource)
-processor = BatchSpanProcessor(
-    OTLPSpanExporter(endpoint="http://localhost:4318/v1/traces")
-)
-tracerProvider.add_span_processor(processor)
-trace.set_tracer_provider(tracerProvider)
+from src.api.telemetry import setup_tracing
 
 
 def get_database_config() -> DatabaseConfig:
@@ -63,4 +50,4 @@ app = FastAPI(lifespan=lifespan)
 app.include_router(WhatsappRouter)
 app.include_router(HealthRouter)
 
-# FastAPIInstrumentor.instrument_app(app)
+setup_tracing(app)

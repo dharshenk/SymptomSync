@@ -10,6 +10,8 @@ from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 from pydantic import BaseModel, Field
 
+from src.api.telemetry import traced
+
 
 class TelegramConfig(BaseModel):
     """Telegram Bot API configuration"""
@@ -78,6 +80,7 @@ class TelegramClient:
 
         return session
 
+    @traced("telegram.send_message")
     def send_message(self, chat_id: str, text: str) -> dict[str, Any]:
         """Send a text message to a Telegram chat"""
         url = f"{self.config.api_url}/sendMessage"

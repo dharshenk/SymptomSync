@@ -41,6 +41,7 @@ async def lifespan(app: FastAPI):
     app.state.agent = Agent(
         name="assistant",
         model=os.getenv("LLM_MODEL") or LitellmModel(model=os.getenv("LITE_LLM_MODEL")),
+        model_settings=model_settings,
         tools=[
             book_appointment,
             generate_patient_report,

@@ -1,4 +1,4 @@
--- use this command to execute this script in the postgres container: docker exec -i <postgre_container_name> psql -U <username> -d <database> < /path/to/script.sql
+-- FROZEN snapshot of the schema at revision 0001. Do not edit: add a new Alembic migration instead.
 -- =====================================================
 -- Symptom Sync Simplified Database Schema
 -- PostgreSQL Database Design for AI-Assisted Healthcare
@@ -107,7 +107,6 @@ CREATE TABLE if not exists patient_intake_state (
     symptoms TEXT,
     pre_existing_conditions TEXT,
     medications TEXT,
-    preferred_date DATE, -- preferred appointment date
     preferred_slot TIMESTAMP WITH TIME ZONE, -- preferred appointment start date and time
     current_step VARCHAR(100), -- next detail or collection step to ask about
     status VARCHAR(20) NOT NULL DEFAULT 'in_progress' CHECK (

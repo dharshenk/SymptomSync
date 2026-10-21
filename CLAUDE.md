@@ -14,6 +14,7 @@ Run from the repository root (imports are `src.api...`, so the root must be on t
 - `uv run pytest -c tests/pytest.ini tests` — full suite; many service tests need a real `test_db` Postgres (`POSTGRES_TEST_HOST`/`PORT`) and Redis credentials
 - `uv run pytest -c tests/pytest.ini tests/api/services/test_x.py::test_name` — single test
 - `uv run pytest -c tests/pytest.ini tests -m integration` — integration-marked tests
+- `uv run alembic upgrade head` / `downgrade -1` / `revision -m "msg"` — DB migrations (see Persistence)
 - `uv run pre-commit run --all-files` — ruff, black, detect-secrets, codespell, pyupgrade
 
 `asyncio_mode = auto` is set, so async tests need no decorator.
@@ -34,7 +35,7 @@ One webhook turns a chat message into an LLM agent run with DB-backed tools.
 
 **Tools** (`src/api/services/function_tool_service.py`): `update_patient_details`, `get_available_slots`, `book_appointment` and `generate_patient_report` are `@function_tool`s. Each receives `RunContextWrapper[ToolContext]`, so services are injected through the context rather than globals. `update_patient_details` writes incrementally into `patient_intake_state` through `PatientIntakeService`, validated by `PatientIntakeUpdate`. The prompt in `src/api/prompts/` drives the intake order and tool usage, so prompt edits change behavior (v2 is the current one; select it via `SYSTEM_PROMPT_PATH`).
 
-**Persistence**: `clients/postgres_sql_client.py` is a thin synchronous psycopg2 wrapper (`execute_query` / `execute_command`) used by the `async` service classes, which build raw SQL with named parameters. There is no ORM or migration tool. The schema is `scripts/database_schema_v1.sql`, with seed data in `scripts/populate_tables_for_testing.sql`; schema changes must be made there and in the service/model code. `get_intake_state` selects only the model's fields so old columns are tolerated.
+**Persistence**: `clients/postgres_sql_client.py` is a thin synchronous psycopg2 wrapper (`execute_query` / `execute_command`) used by the `async` service classes, which build raw SQL with named parameters. There is no ORM. Schema changes are Alembic migrations in `migrations/versions/` written as raw SQL via `op.execute` (no autogenerate, no SQLAlchemy models); always write a working `downgrade()` and update the service/model code to match. `0001` is the baseline: it executes the frozen snapshot `migrations/sql/0001_baseline.sql` (never edit it; the old `scripts/database_schema_v1.sql` no longer exists). Use `IF [NOT] EXISTS` in migrations where a DB may have drifted. `migrations/env.py` builds the URL from the `POSTGRES_*` vars (set `POSTGRES_MIGRATION_HOST=localhost` when running from the host against the compose DB). For a DB created before migrations existed, run `alembic stamp 0001` once. Seed data stays in `scripts/populate_tables_for_testing.sql`. `get_intake_state` selects only the model's fields so old columns are tolerated.
 
 **Tracing** (`src/api/telemetry.py`): OpenTelemetry with the `@traced(...)` decorator, used on `agent.run` and on every tool (`traced_tool`) with patient/session attributes. Set `OTEL_SDK_DISABLED=true` to turn tracing off.
 

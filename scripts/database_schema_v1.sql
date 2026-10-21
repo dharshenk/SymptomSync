@@ -97,6 +97,29 @@ CREATE TABLE if not exists chat_sessions (
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
 
+-- Intake details collected incrementally, with one current record per chat session
+CREATE TABLE if not exists patient_intake_state (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    chat_session_id UUID NOT NULL UNIQUE REFERENCES chat_sessions(id) ON DELETE CASCADE,
+    name VARCHAR(200),
+    age INTEGER CHECK (age BETWEEN 0 AND 150), -- age in completed years
+    gender VARCHAR(20) CHECK (gender IN ('male', 'female', 'prefer_not_to_say')),
+    symptoms TEXT,
+    pre_existing_conditions TEXT,
+    medications TEXT,
+    allergies TEXT,
+    preferred_slot TIMESTAMP WITH TIME ZONE, -- preferred appointment start date and time
+    current_step VARCHAR(100), -- next detail or collection step to ask about
+    status VARCHAR(20) NOT NULL DEFAULT 'in_progress' CHECK (
+        status IN ('in_progress', 'completed', 'abandoned')
+    ),
+    created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    completed_at TIMESTAMP WITH TIME ZONE
+);
+-- NULL intake fields mean not yet collected; use 'None' for explicitly absent conditions, medications, or allergies.
+-- The unique chat_session_id constraint also indexes intake lookups by session.
+
 -- Individual messages within chat sessions
 CREATE TABLE if not exists chat_messages (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
@@ -284,6 +307,9 @@ CREATE TRIGGER update_doctors_updated_at BEFORE UPDATE ON doctors
 CREATE TRIGGER update_doctor_availability_updated_at BEFORE UPDATE ON doctor_availability
     FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 
+CREATE TRIGGER update_patient_intake_state_updated_at BEFORE UPDATE ON patient_intake_state
+    FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+
 CREATE TRIGGER update_appointments_updated_at BEFORE UPDATE ON appointments
     FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 
@@ -416,6 +442,7 @@ COMMENT ON TABLE doctors IS 'Doctor profiles and professional information';
 COMMENT ON TABLE doctor_availability IS 'Weekly schedule templates for doctors';
 COMMENT ON TABLE doctor_unavailability IS 'Specific dates/times when doctors are not available';
 COMMENT ON TABLE chat_sessions IS 'AI bot conversation sessions with patients';
+COMMENT ON TABLE patient_intake_state IS 'Current patient intake details and collection progress for each chat session';
 COMMENT ON TABLE chat_messages IS 'Individual messages within chat sessions';
 COMMENT ON TABLE appointments IS 'Scheduled appointments between patients and doctors';
 COMMENT ON TABLE system_config IS 'Application-wide configuration settings';

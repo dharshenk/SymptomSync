@@ -208,7 +208,7 @@ async def get_response(
     await chat_history_service.add_message(ai_message)
 
     # whatsapp_client.send_text_message(to=WHATSAPP_RECIPIENT_NUMBER, message=response.final_output)
-    telegram_client.send_message(patient_ph_no, response.final_output)
+    # telegram_client.send_message(patient_ph_no, response.final_output)
 
     return response.final_output
 

@@ -72,26 +72,42 @@ def test_intake_tool_schema_excludes_allergies():
 async def test_incremental_updates_preserve_saved_details(intake_tool):
     call, service = intake_tool
     first = await call(name="Test Patient", age=0)
-    assert first["fields"]["name"] == "Test Patient"
-    assert first["fields"]["age"] == 0
-    assert first["fields"]["symptoms"] is None
-    assert "allergies" not in first["fields"]
-    assert first["message"] == (
-        "yet to be collected: gender, symptoms, pre_existing_conditions, "
-        "medications, preferred_slot"
-    )
+    assert first["saved"] == ["name", "age"]
+    assert first["missing"] == [
+        "gender",
+        "symptoms",
+        "pre_existing_conditions",
+        "medications",
+        "preferred_slot",
+    ]
+    assert "fields" not in first
+    assert "allergies" not in first["missing"]
     second = await call(symptoms="Headache")
-    assert second["fields"]["name"] == "Test Patient"
-    assert second["fields"]["age"] == 0
-    assert second["fields"]["symptoms"] == "Headache"
+    assert second["saved"] == ["symptoms"]
+    assert second["missing"] == [
+        "gender",
+        "pre_existing_conditions",
+        "medications",
+        "preferred_slot",
+    ]
     service.create_intake_state.assert_awaited_once()
     service.update_intake_state.assert_awaited_once_with(
         service.create_intake_state.call_args.args[0].chat_session_id,
         symptoms="Headache",
     )
+    state = service.create_intake_state.call_args.args[0]
+    assert state.name == "Test Patient"
     corrected = await call(age=25)
-    assert corrected["fields"]["age"] == 25
-    assert corrected["fields"]["symptoms"] == "Headache"
+    assert corrected["saved"] == ["age"]
+    assert "age" not in corrected["missing"]
+    assert "symptoms" not in corrected["missing"]
+
+
+async def test_result_does_not_echo_saved_values(intake_tool):
+    call, _ = intake_tool
+    result = await call(name="Test Patient", symptoms="Long symptom description")
+    assert "Test Patient" not in json.dumps(result)
+    assert "Long symptom description" not in json.dumps(result)
 
 
 async def test_progresses_to_slots_and_booking(intake_tool):
@@ -104,17 +120,19 @@ async def test_progresses_to_slots_and_booking(intake_tool):
         pre_existing_conditions="None",
         medications="None",
     )
-    assert result["fields"]["preferred_slot"] is None
-    assert result["message"] == "call get_available_slots()"
+    assert result["missing"] == ["preferred_slot"]
+    assert result["next"] == "call get_available_slots()"
     result = await call(preferred_slot="2026-11-01T09:00:00+00:00")
-    assert result["fields"]["preferred_slot"] == "2026-11-01T09:00:00Z"
-    assert result["message"] == "call book_appointment()"
+    assert result["saved"] == ["preferred_slot"]
+    assert result["missing"] == []
+    assert result["next"] == "call book_appointment()"
 
 
 async def test_slot_alone_does_not_allow_booking(intake_tool):
     call, _ = intake_tool
     result = await call(preferred_slot="2026-11-01T09:00:00+00:00", name="  ")
-    assert result["message"].startswith("yet to be collected: name, age")
+    assert result["missing"][:2] == ["name", "age"]
+    assert result["next"] == "ask the patient for the missing details"
 
 
 async def test_failed_save_does_not_return_progress(intake_tool):

@@ -78,6 +78,7 @@ async def test_incremental_updates_preserve_saved_details(intake_tool):
         "symptoms",
         "pre_existing_conditions",
         "medications",
+        "preferred_date",
         "preferred_slot",
     ]
     assert "fields" not in first
@@ -88,6 +89,7 @@ async def test_incremental_updates_preserve_saved_details(intake_tool):
         "gender",
         "pre_existing_conditions",
         "medications",
+        "preferred_date",
         "preferred_slot",
     ]
     service.create_intake_state.assert_awaited_once()
@@ -119,6 +121,7 @@ async def test_progresses_to_slots_and_booking(intake_tool):
         symptoms="Headache",
         pre_existing_conditions="None",
         medications="None",
+        preferred_date="2026-11-01",
     )
     assert result["missing"] == ["preferred_slot"]
     assert result["next"] == "call get_available_slots()"

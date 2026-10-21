@@ -107,6 +107,7 @@ CREATE TABLE if not exists patient_intake_state (
     symptoms TEXT,
     pre_existing_conditions TEXT,
     medications TEXT,
+    preferred_date DATE, -- preferred appointment date
     preferred_slot TIMESTAMP WITH TIME ZONE, -- preferred appointment start date and time
     current_step VARCHAR(100), -- next detail or collection step to ask about
     status VARCHAR(20) NOT NULL DEFAULT 'in_progress' CHECK (

@@ -56,13 +56,15 @@ async def update_patient_details(
     symptoms: str | None = None,
     pre_existing_conditions: str | None = None,
     medications: str | None = None,
+    preferred_date: date | None = None,
     preferred_slot: datetime | None = None,
 ) -> str:
     """Save newly collected or corrected details and return intake progress.
 
     Supply only known details; omitted or null arguments preserve saved values.
     Record explicit answers of no conditions or medications as "None".
-    preferred_slot is the chosen appointment date and time.
+    preferred_date is the patient's preferred appointment date; collect it
+    before preferred_slot. preferred_slot is the chosen appointment date and time.
     """
     fields = {
         "name": name,
@@ -71,6 +73,7 @@ async def update_patient_details(
         "symptoms": symptoms,
         "pre_existing_conditions": pre_existing_conditions,
         "medications": medications,
+        "preferred_date": preferred_date,
         "preferred_slot": preferred_slot,
     }
     updates = PatientIntakeUpdate(

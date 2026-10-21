@@ -1,6 +1,6 @@
 """Patient intake state and partial-update schemas."""
 
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from typing import Literal
 from uuid import UUID, uuid4
 
@@ -20,6 +20,7 @@ class PatientIntakeUpdate(BaseModel):
     symptoms: str | None = None
     pre_existing_conditions: str | None = None
     medications: str | None = None
+    preferred_date: date | None = None
     preferred_slot: datetime | None = None
     current_step: str | None = Field(default=None, max_length=100)
     status: Literal["in_progress", "completed", "abandoned"] = "in_progress"

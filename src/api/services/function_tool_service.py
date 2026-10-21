@@ -92,12 +92,11 @@ async def update_patient_details(
         raise RuntimeError("Saved patient details could not be retrieved")
 
     saved = state.model_dump(mode="json", include=set(fields))
-    filled = {
-        key: value
+    unfilled = [
+        key
         for key, value in saved.items()
-        if value is not None and (not isinstance(value, str) or value.strip())
-    }
-    unfilled = [key for key in fields if key not in filled]
+        if value is None or (isinstance(value, str) and not value.strip())
+    ]
     if not unfilled:
         message = "call book_appointment()"
     elif unfilled == ["preferred_slot"]:
@@ -107,8 +106,6 @@ async def update_patient_details(
     return json.dumps(
         {
             "fields": saved,
-            "filled_fields": filled,
-            "unfilled_fields": unfilled,
             "message": message,
         }
     )

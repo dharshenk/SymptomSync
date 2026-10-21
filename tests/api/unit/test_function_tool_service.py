@@ -72,7 +72,8 @@ def test_intake_tool_schema_excludes_allergies():
 async def test_incremental_updates_preserve_saved_details(intake_tool):
     call, service = intake_tool
     first = await call(name="Test Patient", age=0)
-    assert first["filled_fields"] == {"name": "Test Patient", "age": 0}
+    assert first["fields"]["name"] == "Test Patient"
+    assert first["fields"]["age"] == 0
     assert first["fields"]["symptoms"] is None
     assert "allergies" not in first["fields"]
     assert first["message"] == (
@@ -80,11 +81,9 @@ async def test_incremental_updates_preserve_saved_details(intake_tool):
         "medications, preferred_slot"
     )
     second = await call(symptoms="Headache")
-    assert second["filled_fields"] == {
-        "name": "Test Patient",
-        "age": 0,
-        "symptoms": "Headache",
-    }
+    assert second["fields"]["name"] == "Test Patient"
+    assert second["fields"]["age"] == 0
+    assert second["fields"]["symptoms"] == "Headache"
     service.create_intake_state.assert_awaited_once()
     service.update_intake_state.assert_awaited_once_with(
         service.create_intake_state.call_args.args[0].chat_session_id,
@@ -105,10 +104,9 @@ async def test_progresses_to_slots_and_booking(intake_tool):
         pre_existing_conditions="None",
         medications="None",
     )
-    assert result["unfilled_fields"] == ["preferred_slot"]
+    assert result["fields"]["preferred_slot"] is None
     assert result["message"] == "call get_available_slots()"
     result = await call(preferred_slot="2026-11-01T09:00:00+00:00")
-    assert result["unfilled_fields"] == []
     assert result["fields"]["preferred_slot"] == "2026-11-01T09:00:00Z"
     assert result["message"] == "call book_appointment()"
 
@@ -116,7 +114,6 @@ async def test_progresses_to_slots_and_booking(intake_tool):
 async def test_slot_alone_does_not_allow_booking(intake_tool):
     call, _ = intake_tool
     result = await call(preferred_slot="2026-11-01T09:00:00+00:00", name="  ")
-    assert "name" in result["unfilled_fields"]
     assert result["message"].startswith("yet to be collected: name, age")
 
 

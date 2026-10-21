@@ -102,11 +102,14 @@ async def update_patient_details(
     elif unfilled == ["preferred_slot"]:
         message = "call get_available_slots()"
     else:
-        message = "yet to be collected: " + ", ".join(unfilled)
+        message = "ask the patient for the missing details"
+    # Saved values are omitted: they are already in the conversation as call
+    # arguments, and echoing them would bloat context on every call.
     return json.dumps(
         {
-            "fields": saved,
-            "message": message,
+            "saved": list(updates),
+            "missing": unfilled,
+            "next": message,
         }
     )
 

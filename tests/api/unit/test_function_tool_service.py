@@ -64,14 +64,20 @@ def intake_tool():
     return call, service
 
 
+def test_intake_tool_schema_excludes_allergies():
+    assert "allergies" not in update_patient_details.params_json_schema["properties"]
+    assert "allergies" not in update_patient_details.params_json_schema["required"]
+
+
 async def test_incremental_updates_preserve_saved_details(intake_tool):
     call, service = intake_tool
     first = await call(name="Test Patient", age=0)
     assert first["filled_fields"] == {"name": "Test Patient", "age": 0}
     assert first["fields"]["symptoms"] is None
+    assert "allergies" not in first["fields"]
     assert first["message"] == (
         "yet to be collected: gender, symptoms, pre_existing_conditions, "
-        "medications, allergies, preferred_slot"
+        "medications, preferred_slot"
     )
     second = await call(symptoms="Headache")
     assert second["filled_fields"] == {
@@ -98,7 +104,6 @@ async def test_progresses_to_slots_and_booking(intake_tool):
         symptoms="Headache",
         pre_existing_conditions="None",
         medications="None",
-        allergies="None",
     )
     assert result["unfilled_fields"] == ["preferred_slot"]
     assert result["message"] == "call get_available_slots()"

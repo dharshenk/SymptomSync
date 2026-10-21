@@ -107,7 +107,6 @@ CREATE TABLE if not exists patient_intake_state (
     symptoms TEXT,
     pre_existing_conditions TEXT,
     medications TEXT,
-    allergies TEXT,
     preferred_slot TIMESTAMP WITH TIME ZONE, -- preferred appointment start date and time
     current_step VARCHAR(100), -- next detail or collection step to ask about
     status VARCHAR(20) NOT NULL DEFAULT 'in_progress' CHECK (
@@ -117,7 +116,7 @@ CREATE TABLE if not exists patient_intake_state (
     updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
     completed_at TIMESTAMP WITH TIME ZONE
 );
--- NULL intake fields mean not yet collected; use 'None' for explicitly absent conditions, medications, or allergies.
+-- NULL intake fields mean not yet collected; use 'None' for explicitly absent conditions or medications.
 -- The unique chat_session_id constraint also indexes intake lookups by session.
 
 -- Individual messages within chat sessions

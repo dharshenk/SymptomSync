@@ -30,8 +30,10 @@ class PatientIntakeService:
         self, chat_session_id: UUID
     ) -> PatientIntakeState | None:
         """Fetch a session's intake state, or None if it has not been created."""
+        # Select supported fields so older database columns do not enter the model.
+        columns = ", ".join(PatientIntakeState.model_fields)
         rows = self._postgres_client.execute_query(
-            "SELECT * FROM patient_intake_state WHERE chat_session_id = %(chat_session_id)s;",
+            f"SELECT {columns} FROM patient_intake_state WHERE chat_session_id = %(chat_session_id)s;",
             {"chat_session_id": str(chat_session_id)},
             fetch="one",
         )

@@ -30,6 +30,8 @@ async def test_create_state(service, client):
     assert params["chat_session_id"] == str(state.chat_session_id)
     assert params["status"] == "in_progress"
     assert params["symptoms"] is None
+    assert "allergies" not in params
+    assert "allergies" not in query
 
 
 async def test_get_state(service, client):
@@ -37,6 +39,10 @@ async def test_get_state(service, client):
     client.execute_query.return_value = [state.model_dump()]
     assert await service.get_intake_state(state.chat_session_id) == state
     assert client.execute_query.call_args.kwargs["fetch"] == "one"
+    query = client.execute_query.call_args.args[0]
+    columns = query.split(" FROM ")[0].removeprefix("SELECT ").split(", ")
+    assert set(columns) == set(PatientIntakeState.model_fields)
+    assert "allergies" not in columns
 
 
 async def test_get_missing_state(service, client):
@@ -85,6 +91,7 @@ async def test_update_serializes_datetime_and_gender(service, client):
     "fields",
     [
         {"age": -1},
+        {"allergies": "None"},
         {"age": 151},
         {"gender": "invalid"},
         {"status": "invalid"},

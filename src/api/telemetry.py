@@ -1,5 +1,6 @@
 import functools
 import inspect
+import os
 from typing import Any
 from collections.abc import Callable
 
@@ -16,7 +17,18 @@ tracer = trace.get_tracer("symptom.sync.tracer")
 
 
 def setup_tracing(app: FastAPI) -> None:
-    """Configure the OTLP exporter (honours OTEL_EXPORTER_OTLP_*) and trace FastAPI requests."""
+    """Trace requests only when an OTLP endpoint is explicitly configured."""
+    if os.getenv("OTEL_SDK_DISABLED", "").strip().lower() == "true":
+        return
+    if not any(
+        os.getenv(name, "").strip()
+        for name in (
+            "OTEL_EXPORTER_OTLP_TRACES_ENDPOINT",
+            "OTEL_EXPORTER_OTLP_ENDPOINT",
+        )
+    ):
+        return
+
     provider = TracerProvider(
         resource=Resource.create(attributes={SERVICE_NAME: "symptom-sync"})
     )

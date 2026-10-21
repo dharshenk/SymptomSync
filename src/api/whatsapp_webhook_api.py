@@ -10,6 +10,7 @@ from src.api.models.telegram_model import TelegramUpdate
 from src.api.clients.whatsapp_client import WhatsAppClient, WhatsAppConfig
 from src.api.clients.telegram_client import TelegramClient, TelegramConfig
 from src.api.services.patient_service import PatientService
+from src.api.services.patient_intake_service import PatientIntakeService
 from agents import Agent, Runner
 from dotenv import load_dotenv
 from fastapi import Depends, APIRouter, Request
@@ -63,6 +64,12 @@ def get_appointment_service(
     postgres_client: Annotated[PostgresSQLClient, Depends(get_postgres_client)],
 ) -> AppointmentService:
     return AppointmentService(postgres_client)
+
+
+def get_patient_intake_service(
+    postgres_client: Annotated[PostgresSQLClient, Depends(get_postgres_client)],
+) -> PatientIntakeService:
+    return PatientIntakeService(postgres_client)
 
 
 router = APIRouter()
@@ -126,6 +133,9 @@ async def get_response(
     chat_history_service: Annotated[
         ChatHistoryService, Depends(get_chat_history_service)
     ],
+    patient_intake_service: Annotated[
+        PatientIntakeService, Depends(get_patient_intake_service)
+    ],
     agent: Annotated[Agent, Depends(get_agent)],
     telegram_client: Annotated[TelegramClient, Depends(get_telegram_client)],
     appointment_service: Annotated[
@@ -179,6 +189,7 @@ async def get_response(
         patient_id=patient.id,
         chat_session_id=chat_session.id,
         appointment_service=appointment_service,
+        patient_intake_service=patient_intake_service,
         doctor_id=uuid.UUID("11111111-1111-1111-1111-111111111111"),
         appointment=latest_appointment,
         appointment_date=(

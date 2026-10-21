@@ -2,7 +2,9 @@ from src.api.services.appointment_service import AppointmentService
 from src.api.models.appointment_model import Appointment
 from src.api.models.patient_model import Gender
 from src.api.services.patient_report_service import generate_patient_report_pdf
-from datetime import date, time
+from src.api.services.patient_intake_service import PatientIntakeService
+from src.api.models.patient_intake_model import PatientIntakeState, PatientIntakeUpdate
+from datetime import date, datetime, time
 from uuid import UUID
 from agents import function_tool, RunContextWrapper
 from pathlib import Path
@@ -25,6 +27,7 @@ class ToolContext(BaseModel):
     doctor_id: UUID
     chat_session_id: UUID
     appointment_service: AppointmentService
+    patient_intake_service: PatientIntakeService
     appointment_date: date = Field(
         default_factory=date.today
     )  # our get_available_slots function in the db only looks for one particular day
@@ -41,6 +44,76 @@ def _tool_attrs(wrapper: RunContextWrapper[ToolContext], *_, **__) -> dict:
 
 def traced_tool(func):
     return traced(f"agent.tool.{func.__name__}", attrs=_tool_attrs)(func)
+
+
+@function_tool
+@traced_tool
+async def update_patient_details(
+    wrapper: RunContextWrapper[ToolContext],
+    name: str | None = None,
+    age: int | None = None,
+    gender: Gender | None = None,
+    symptoms: str | None = None,
+    pre_existing_conditions: str | None = None,
+    medications: str | None = None,
+    allergies: str | None = None,
+    preferred_slot: datetime | None = None,
+) -> str:
+    """Save newly collected or corrected details and return intake progress.
+
+    Supply only known details; omitted or null arguments preserve saved values.
+    Record explicit answers of no conditions, medications, or allergies as "None".
+    preferred_slot is the chosen appointment date and time.
+    """
+    fields = {
+        "name": name,
+        "age": age,
+        "gender": gender,
+        "symptoms": symptoms,
+        "pre_existing_conditions": pre_existing_conditions,
+        "medications": medications,
+        "allergies": allergies,
+        "preferred_slot": preferred_slot,
+    }
+    updates = PatientIntakeUpdate(
+        **{key: value for key, value in fields.items() if value is not None}
+    ).model_dump(exclude_unset=True)
+    service = wrapper.context.patient_intake_service
+    session_id = wrapper.context.chat_session_id
+    state = await service.get_intake_state(session_id)
+    if state is None:
+        await service.create_intake_state(
+            PatientIntakeState(chat_session_id=session_id, **updates)
+        )
+    elif updates:
+        if not await service.update_intake_state(session_id, **updates):
+            raise RuntimeError("Patient details could not be saved")
+
+    state = await service.get_intake_state(session_id)
+    if state is None:
+        raise RuntimeError("Saved patient details could not be retrieved")
+
+    saved = state.model_dump(mode="json", include=set(fields))
+    filled = {
+        key: value
+        for key, value in saved.items()
+        if value is not None and (not isinstance(value, str) or value.strip())
+    }
+    unfilled = [key for key in fields if key not in filled]
+    if not unfilled:
+        message = "call book_appointment()"
+    elif unfilled == ["preferred_slot"]:
+        message = "call get_available_slots()"
+    else:
+        message = "yet to be collected: " + ", ".join(unfilled)
+    return json.dumps(
+        {
+            "fields": saved,
+            "filled_fields": filled,
+            "unfilled_fields": unfilled,
+            "message": message,
+        }
+    )
 
 
 @function_tool

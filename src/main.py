@@ -11,6 +11,7 @@ from src.api.services.function_tool_service import (
     book_appointment,
     generate_patient_report,
     get_available_slots,
+    update_patient_details,
 )
 
 from src.api.telemetry import setup_tracing
@@ -33,7 +34,12 @@ async def lifespan(app: FastAPI):
     app.state.agent = Agent(
         name="assistant",
         model=LitellmModel(model=os.getenv("LLM_MODEL")),
-        tools=[book_appointment, generate_patient_report, get_available_slots],
+        tools=[
+            book_appointment,
+            generate_patient_report,
+            get_available_slots,
+            update_patient_details,
+        ],
     )
 
     yield

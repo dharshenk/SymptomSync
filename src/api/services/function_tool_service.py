@@ -4,7 +4,7 @@ from src.api.models.patient_model import Gender
 from src.api.services.patient_report_service import generate_patient_report_pdf
 from src.api.services.patient_intake_service import PatientIntakeService
 from src.api.models.patient_intake_model import PatientIntakeState, PatientIntakeUpdate
-from datetime import date, datetime, time
+from datetime import date, datetime
 from uuid import UUID
 from agents import function_tool, RunContextWrapper
 from pathlib import Path
@@ -45,6 +45,36 @@ INTAKE_STEPS = (
     ),
     (("preferred_date", "preferred appointment date"),),
 )
+
+
+# Fields in collection order. A tool is ready once everything up to and including
+# its last required field is filled.
+REQUIRED_FIELDS = (
+    "name",
+    "age",
+    "gender",
+    "symptoms",
+    "pre_existing_conditions",
+    "medications",
+    "preferred_date",
+    "preferred_slot",
+)
+
+
+def _is_blank(value) -> bool:
+    return value is None or (isinstance(value, str) and not value.strip())
+
+
+def _missing_upto(state: PatientIntakeState | None, last_field: str) -> list[str]:
+    """Fields still unfilled from the first one up to and including last_field."""
+    required = REQUIRED_FIELDS[: REQUIRED_FIELDS.index(last_field) + 1]
+    return [key for key in required if state is None or _is_blank(getattr(state, key))]
+
+
+def _not_ready(missing: list[str]) -> str:
+    return json.dumps(
+        {"status": "Not Ready", "missing": missing, "next": _next_ask(missing)}
+    )
 
 
 def _next_ask(unfilled: list[str]) -> str:
@@ -118,11 +148,7 @@ async def update_patient_details(
         raise RuntimeError("Saved patient details could not be retrieved")
 
     saved = state.model_dump(mode="json", include=set(fields))
-    unfilled = [
-        key
-        for key, value in saved.items()
-        if value is None or (isinstance(value, str) and not value.strip())
-    ]
+    unfilled = [key for key, value in saved.items() if _is_blank(value)]
     if not unfilled:
         message = "call book_appointment()"
     else:
@@ -143,6 +169,21 @@ async def update_patient_details(
 async def get_available_slots(
     wrapper: RunContextWrapper[ToolContext], appointment_date: date
 ):
+    state = await wrapper.context.patient_intake_service.get_intake_state(
+        wrapper.context.chat_session_id
+    )
+    missing = _missing_upto(state, "preferred_date")
+    if missing:
+        return _not_ready(missing)
+    if state.preferred_date != appointment_date:
+        return json.dumps(
+            {
+                "status": "Not Ready",
+                "missing": [],
+                "next": "save the patient's new preferred date with update_patient_details() first",
+            }
+        )
+
     wrapper.context.appointment_date = appointment_date
     slots = await wrapper.context.appointment_service.get_available_slots(
         doctor_id=wrapper.context.doctor_id, appointment_date=appointment_date
@@ -174,22 +215,51 @@ async def get_available_slots(
     return json.dumps(data, indent=2)
 
 
-@function_tool
+async def _book_ready(
+    wrapper: RunContextWrapper[ToolContext], _params: dict, _call_id: str
+) -> bool:
+    """HITL gate: ask the patient for approval only when every detail is collected.
+
+    Returning False does not skip the tool; it runs without an approval prompt, and
+    the guard in book_appointment then tells the model what is still missing.
+    """
+    state = await wrapper.context.patient_intake_service.get_intake_state(
+        wrapper.context.chat_session_id
+    )
+    return not _missing_upto(state, "preferred_slot")
+
+
+@function_tool()  # after HITL implementation add this to the params: needs_approval=_book_ready
 @traced_tool
-async def book_appointment(
-    wrapper: RunContextWrapper[ToolContext],
-    start_time: time,
-    end_time: time,
-    patient_notes: str | None = None,
-):
+async def book_appointment(wrapper: RunContextWrapper[ToolContext]):
+    state = await wrapper.context.patient_intake_service.get_intake_state(
+        wrapper.context.chat_session_id
+    )
+    missing = _missing_upto(state, "preferred_slot")
+    if missing:
+        return _not_ready(missing)
+
+    slot_date = state.preferred_slot.date()
+    slot_start = state.preferred_slot.time()
+    slots = await wrapper.context.appointment_service.get_available_slots(
+        doctor_id=wrapper.context.doctor_id, appointment_date=slot_date
+    )
+    slot = next((s for s in slots or [] if s["slot_start"] == slot_start), None)
+    if slot is None:
+        return json.dumps(
+            {
+                "status": "Slot Unavailable",
+                "next": "apologize, call get_available_slots() and let the patient choose another slot",
+            }
+        )
+
     appointment = Appointment(
         patient_id=wrapper.context.patient_id,  # UUID from PatientData
         doctor_id=wrapper.context.doctor_id,
         chat_session_id=wrapper.context.chat_session_id,
-        appointment_date=wrapper.context.appointment_date,
-        start_time=start_time,
-        end_time=end_time,
-        patient_notes=patient_notes,
+        appointment_date=slot_date,
+        start_time=slot_start,
+        end_time=slot["slot_end"],
     )
 
     wrapper.context.appointment = appointment

@@ -1,6 +1,7 @@
 """Exercise intake tools through the agent SDK without external services."""
 
 import json
+from datetime import date, datetime, time, timezone
 from unittest.mock import AsyncMock, Mock
 from uuid import uuid4
 
@@ -9,7 +10,14 @@ from agents.tool_context import ToolContext as AgentToolContext
 
 from src.api.models.patient_intake_model import PatientIntakeState
 from src.api.services.appointment_service import AppointmentService
-from src.api.services.function_tool_service import ToolContext, update_patient_details
+from src.api.services.function_tool_service import (
+    ToolContext,
+    _book_ready,
+    _missing_upto,
+    book_appointment,
+    get_available_slots,
+    update_patient_details,
+)
 from src.api.services.patient_intake_service import PatientIntakeService
 
 
@@ -148,3 +156,124 @@ async def test_failed_save_does_not_return_progress(intake_tool):
     # The SDK exposes tool failures as error text, rather than a success payload.
     with pytest.raises(json.JSONDecodeError):
         await call(age=30)
+
+
+def _state(**fields):
+    base = dict(
+        chat_session_id=uuid4(),
+        name="Test Patient",
+        age=30,
+        gender="female",
+        symptoms="Headache",
+        pre_existing_conditions="None",
+        medications="None",
+        preferred_date=date(2026, 11, 1),
+    )
+    return PatientIntakeState(**{**base, **fields})
+
+
+@pytest.fixture
+def booking_tools():
+    intake = AsyncMock(spec=PatientIntakeService)
+    appointments = AsyncMock(spec=AppointmentService)
+    appointments.get_available_slots.return_value = [
+        {"slot_start": time(9, 0), "slot_end": time(9, 30)}
+    ]
+    appointments.book_appointment.return_value = True
+    wrapper = AgentToolContext(
+        tool_name="tool",
+        tool_call_id="test-call",
+        tool_arguments="{}",
+        context=ToolContext(
+            patient_id=uuid4(),
+            doctor_id=uuid4(),
+            chat_session_id=uuid4(),
+            appointment_service=appointments,
+            patient_intake_service=intake,
+        ),
+    )
+    return wrapper, intake, appointments
+
+
+def test_missing_upto_stops_at_last_required_field():
+    state = _state(name="  ", preferred_date=None)
+    assert _missing_upto(state, "gender") == ["name"]
+    assert _missing_upto(state, "preferred_slot") == [
+        "name",
+        "preferred_date",
+        "preferred_slot",
+    ]
+    assert _missing_upto(None, "age") == ["name", "age"]
+
+
+async def test_slots_not_ready_until_preferred_date_collected(booking_tools):
+    wrapper, intake, appointments = booking_tools
+    intake.get_intake_state.return_value = _state(preferred_date=None)
+    result = json.loads(
+        await get_available_slots.on_invoke_tool(
+            wrapper, json.dumps({"appointment_date": "2026-11-01"})
+        )
+    )
+    assert result["status"] == "Not Ready"
+    assert result["missing"] == ["preferred_date"]
+    appointments.get_available_slots.assert_not_awaited()
+
+
+async def test_slots_rejects_date_that_differs_from_saved(booking_tools):
+    wrapper, intake, appointments = booking_tools
+    intake.get_intake_state.return_value = _state()
+    result = json.loads(
+        await get_available_slots.on_invoke_tool(
+            wrapper, json.dumps({"appointment_date": "2026-11-02"})
+        )
+    )
+    assert result["status"] == "Not Ready"
+    appointments.get_available_slots.assert_not_awaited()
+
+
+async def test_slots_run_once_date_collected(booking_tools):
+    wrapper, intake, appointments = booking_tools
+    intake.get_intake_state.return_value = _state()
+    result = json.loads(
+        await get_available_slots.on_invoke_tool(
+            wrapper, json.dumps({"appointment_date": "2026-11-01"})
+        )
+    )
+    assert result["status"] == "Success"
+    appointments.get_available_slots.assert_awaited_once()
+
+
+async def test_book_not_ready_without_slot(booking_tools):
+    wrapper, intake, appointments = booking_tools
+    intake.get_intake_state.return_value = _state()
+    assert await _book_ready(wrapper, {}, "call") is False
+    result = json.loads(await book_appointment.on_invoke_tool(wrapper, "{}"))
+    assert result["missing"] == ["preferred_slot"]
+    assert result["next"] == "call get_available_slots()"
+    appointments.book_appointment.assert_not_awaited()
+
+
+async def test_book_uses_saved_slot_when_complete(booking_tools):
+    wrapper, intake, appointments = booking_tools
+    intake.get_intake_state.return_value = _state(
+        preferred_slot=datetime(2026, 11, 1, 9, 0, tzinfo=timezone.utc)
+    )
+    assert await _book_ready(wrapper, {}, "call") is True
+    result = await book_appointment.on_invoke_tool(wrapper, "{}")
+    assert "successfully booked" in result
+    booked = appointments.book_appointment.call_args.args[0]
+    assert (booked.appointment_date, booked.start_time, booked.end_time) == (
+        date(2026, 11, 1),
+        time(9, 0),
+        time(9, 30),
+    )
+
+
+async def test_book_rejects_slot_no_longer_available(booking_tools):
+    wrapper, intake, appointments = booking_tools
+    intake.get_intake_state.return_value = _state(
+        preferred_slot=datetime(2026, 11, 1, 10, 0, tzinfo=timezone.utc)
+    )
+    result = json.loads(await book_appointment.on_invoke_tool(wrapper, "{}"))
+    assert result["status"] == "Slot Unavailable"
+    appointments.book_appointment.assert_not_awaited()

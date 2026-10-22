@@ -4,6 +4,8 @@ services:
       context: .
       dockerfile: Dockerfile
     container_name: symptom-sync-app
+    healthcheck:
+      disable: true
     env_file:
       - .env
     environment:

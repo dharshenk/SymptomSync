@@ -14,7 +14,7 @@ services:
       - "8888:8000"
     volumes:
       - ./src:/app/src
-    command: ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000", "--app-dir", "src", "--reload"]
+    command: ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000", "--app-dir", "src", "--reload", "--reload-dir", "src"]
     depends_on:
       - postgres-db
       - redis-db

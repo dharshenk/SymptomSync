@@ -269,11 +269,12 @@ async def test_book_uses_saved_slot_when_complete(booking_tools):
     )
 
 
-async def test_book_rejects_slot_no_longer_available(booking_tools):
+async def test_book_does_not_check_slot_availability(booking_tools):
     wrapper, intake, appointments = booking_tools
     intake.get_intake_state.return_value = _state(
         preferred_slot=datetime(2026, 11, 1, 10, 0, tzinfo=timezone.utc)
     )
-    result = json.loads(await book_appointment.on_invoke_tool(wrapper, "{}"))
-    assert result["status"] == "Slot Unavailable"
-    appointments.book_appointment.assert_not_awaited()
+    result = await book_appointment.on_invoke_tool(wrapper, "{}")
+    assert "successfully booked" in result
+    appointments.get_available_slots.assert_not_awaited()
+    appointments.book_appointment.assert_awaited_once()

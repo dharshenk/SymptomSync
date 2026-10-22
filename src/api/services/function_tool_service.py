@@ -4,7 +4,7 @@ from src.api.models.patient_model import Gender
 from src.api.services.patient_report_service import generate_patient_report_pdf
 from src.api.services.patient_intake_service import PatientIntakeService
 from src.api.models.patient_intake_model import PatientIntakeState, PatientIntakeUpdate
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from uuid import UUID
 from agents import function_tool, RunContextWrapper
 from pathlib import Path
@@ -243,25 +243,13 @@ async def book_appointment(wrapper: RunContextWrapper[ToolContext]):
 
     slot_date = patient_intake_state.preferred_slot.date()
     slot_start = patient_intake_state.preferred_slot.time()
-    slots = await wrapper.context.appointment_service.get_available_slots(
-        doctor_id=wrapper.context.doctor_id, appointment_date=slot_date
-    )
-    slot = next((s for s in slots or [] if s["slot_start"] == slot_start), None)
-    if slot is None:
-        return json.dumps(
-            {
-                "status": "Slot Unavailable",
-                "next": "apologize, call get_available_slots() and let the patient choose another slot",
-            }
-        )
-
     appointment = Appointment(
         patient_id=wrapper.context.patient_id,  # UUID from PatientData
         doctor_id=wrapper.context.doctor_id,
         chat_session_id=wrapper.context.chat_session_id,
         appointment_date=slot_date,
         start_time=slot_start,
-        end_time=slot["slot_end"],
+        end_time=(patient_intake_state.preferred_slot + timedelta(minutes=30)).time(),
     )
 
     wrapper.context.appointment = appointment

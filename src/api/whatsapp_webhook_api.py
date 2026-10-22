@@ -144,7 +144,10 @@ async def get_response(
 ):
     patient_ph_no = str(telegram_webhook_request.message.from_user.id)
     session_id = uuid.uuid5(uuid.NAMESPACE_DNS, patient_ph_no)
-    patient_message = telegram_webhook_request.message.text
+    today_str = date.today().strftime("%A, %B %d, %Y")
+    patient_message = (
+        f"[Current date: {today_str}]\n{telegram_webhook_request.message.text}"
+    )
 
     patient = await patient_service.get_patient_by_patient_ph_no(patient_ph_no)
     if not patient:

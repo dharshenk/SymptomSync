@@ -75,17 +75,30 @@ def get_patient_intake_service(
 router = APIRouter()
 
 
+def messages_to_agent_items(previous_messages: list["ChatMessage"]) -> list[dict]:
+    """Convert stored chat messages into plain role/content agent input items."""
+
+    sender_type_map = {"patient": "user", "bot": "assistant"}
+
+    return [
+        {
+            "role": sender_type_map.get(msg.sender_type.lower()),
+            "content": msg.message_content,
+        }
+        for msg in previous_messages
+    ]
+
+
 def format_messages_for_runner(
     user_question: str,
     system_prompt: str,
-    previous_messages: list["ChatMessage"] | None = None,
+    previous_items: list[dict] | None = None,
 ) -> list[dict]:
     """
-    Build a chat message list for OpenAI's Runner.
-    Always appends the current user question, and prepends previous messages if given.
+    Build the input item list for OpenAI's Runner.
+    Always appends the current user question, and prepends previous agent items
+    (messages, tool calls and tool outputs) if given.
     """
-
-    sender_type_map = {"patient": "user", "bot": "assistant"}
 
     messages: list[dict] = [
         {
@@ -94,14 +107,8 @@ def format_messages_for_runner(
         }
     ]
 
-    if previous_messages:
-        messages.extend(
-            {
-                "role": sender_type_map.get(msg.sender_type.lower()),
-                "content": msg.message_content,
-            }
-            for msg in previous_messages
-        )
+    if previous_items:
+        messages.extend(previous_items)
 
     messages.append({"role": "user", "content": user_question})
 
@@ -177,10 +184,17 @@ async def get_response(
     )
     await chat_history_service.add_message(user_message)
 
+    previous_items = await chat_history_service.get_agent_items(chat_session.id)
+    if not previous_items and previous_messages:
+        # Session predates agent item storage: seed it from the text transcript
+        previous_items = messages_to_agent_items(previous_messages)
+        await chat_history_service.add_agent_items(chat_session.id, previous_items)
+
     system_prompt = get_system_prompt()
+    user_item = {"role": "user", "content": patient_message}
     input_list = format_messages_for_runner(
         user_question=patient_message,
-        previous_messages=previous_messages,
+        previous_items=previous_items,
         system_prompt=system_prompt,
     )
 
@@ -209,6 +223,11 @@ async def get_response(
         message_sequence=user_message.message_sequence + 1,
     )
     await chat_history_service.add_message(ai_message)
+
+    await chat_history_service.add_agent_items(
+        chat_session.id,
+        [user_item] + [item.to_input_item() for item in response.new_items],
+    )
 
     # whatsapp_client.send_text_message(to=WHATSAPP_RECIPIENT_NUMBER, message=response.final_output)
     # telegram_client.send_message(patient_ph_no, response.final_output)

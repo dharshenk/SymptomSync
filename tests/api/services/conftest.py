@@ -127,6 +127,19 @@ def setup_schema(db_client: PostgresSQLClient) -> Generator[None, None, None]:
 
     db_client.execute_command(
         """
+        CREATE TABLE IF NOT EXISTS chat_agent_items (
+            id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+            session_id UUID REFERENCES chat_sessions(id) ON DELETE CASCADE,
+            item_sequence INTEGER NOT NULL,
+            item JSON NOT NULL,
+            created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE(session_id, item_sequence)
+        );
+        """
+    )
+
+    db_client.execute_command(
+        """
         CREATE TABLE IF NOT EXISTS chat_messages (
             id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
             session_id UUID REFERENCES chat_sessions(id) ON DELETE CASCADE,
@@ -377,6 +390,7 @@ def setup_schema(db_client: PostgresSQLClient) -> Generator[None, None, None]:
     # Teardown: drop tables in reverse FK order
     for table in (
         "appointments",
+        "chat_agent_items",
         "chat_messages",
         "chat_sessions",
         "doctor_unavailability",

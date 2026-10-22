@@ -83,6 +83,7 @@ async def test_incremental_updates_preserve_saved_details(intake_tool):
     ]
     assert "fields" not in first
     assert "allergies" not in first["missing"]
+    assert first["next"] == "ask the patient for their gender"
     second = await call(symptoms="Headache")
     assert second["saved"] == ["symptoms"]
     assert second["missing"] == [
@@ -92,6 +93,7 @@ async def test_incremental_updates_preserve_saved_details(intake_tool):
         "preferred_date",
         "preferred_slot",
     ]
+    assert second["next"] == "ask the patient for their gender"
     service.create_intake_state.assert_awaited_once()
     service.update_intake_state.assert_awaited_once_with(
         service.create_intake_state.call_args.args[0].chat_session_id,
@@ -102,6 +104,7 @@ async def test_incremental_updates_preserve_saved_details(intake_tool):
     corrected = await call(age=25)
     assert corrected["saved"] == ["age"]
     assert "age" not in corrected["missing"]
+    assert corrected["next"] == "ask the patient for their gender"
     assert "symptoms" not in corrected["missing"]
 
 
@@ -135,7 +138,7 @@ async def test_slot_alone_does_not_allow_booking(intake_tool):
     call, _ = intake_tool
     result = await call(preferred_slot="2026-11-01T09:00:00+00:00", name="  ")
     assert result["missing"][:2] == ["name", "age"]
-    assert result["next"] == "ask the patient for the missing details"
+    assert result["next"] == "ask the patient for their name, age and gender"
 
 
 async def test_failed_save_does_not_return_progress(intake_tool):

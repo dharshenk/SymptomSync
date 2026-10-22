@@ -34,6 +34,29 @@ class ToolContext(BaseModel):
     appointment: Appointment | None = None
 
 
+# Intake steps in the order the v2 prompt collects them; each step is asked as one
+# message, so only the fields still missing within the current step are requested.
+INTAKE_STEPS = (
+    (("name", "name"), ("age", "age"), ("gender", "gender")),
+    (("symptoms", "symptoms or reason for the visit"),),
+    (
+        ("pre_existing_conditions", "pre-existing conditions"),
+        ("medications", "current medications"),
+    ),
+    (("preferred_date", "preferred appointment date"),),
+)
+
+
+def _next_ask(unfilled: list[str]) -> str:
+    for step in INTAKE_STEPS:
+        labels = [label for key, label in step if key in unfilled]
+        if labels:
+            return "ask the patient for their " + " and ".join(
+                [", ".join(labels[:-1])] * (len(labels) > 1) + labels[-1:]
+            )
+    return "call get_available_slots()"
+
+
 def _tool_attrs(wrapper: RunContextWrapper[ToolContext], *_, **__) -> dict:
     return {
         "patient.id": str(wrapper.context.patient_id),
@@ -102,10 +125,8 @@ async def update_patient_details(
     ]
     if not unfilled:
         message = "call book_appointment()"
-    elif unfilled == ["preferred_slot"]:
-        message = "call get_available_slots()"
     else:
-        message = "ask the patient for the missing details"
+        message = _next_ask(unfilled)
     # Saved values are omitted: they are already in the conversation as call
     # arguments, and echoing them would bloat context on every call.
     return json.dumps(

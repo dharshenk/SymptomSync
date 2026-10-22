@@ -232,15 +232,17 @@ async def _book_ready(
 @function_tool()  # after HITL implementation add this to the params: needs_approval=_book_ready
 @traced_tool
 async def book_appointment(wrapper: RunContextWrapper[ToolContext]):
-    state = await wrapper.context.patient_intake_service.get_intake_state(
-        wrapper.context.chat_session_id
+    patient_intake_state = (
+        await wrapper.context.patient_intake_service.get_intake_state(
+            wrapper.context.chat_session_id
+        )
     )
-    missing = _missing_upto(state, "preferred_slot")
+    missing = _missing_upto(patient_intake_state, "preferred_slot")
     if missing:
         return _not_ready(missing)
 
-    slot_date = state.preferred_slot.date()
-    slot_start = state.preferred_slot.time()
+    slot_date = patient_intake_state.preferred_slot.date()
+    slot_start = patient_intake_state.preferred_slot.time()
     slots = await wrapper.context.appointment_service.get_available_slots(
         doctor_id=wrapper.context.doctor_id, appointment_date=slot_date
     )

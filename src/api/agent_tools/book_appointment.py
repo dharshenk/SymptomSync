@@ -27,16 +27,12 @@ async def book_appointment(wrapper: RunContextWrapper[ToolContext]) -> str:
     intake details. Only call this once the patient has chosen a start time from
     the options returned by get_available_slots.
     """
-    patient_intake_state = (
-        await wrapper.context.patient_intake_service.get_intake_state(
-            wrapper.context.chat_session_id
-        )
-    )
+    patient_intake_state = wrapper.context.patient_intake_state
     missing = [
         label
         for step in BOOKING_STEPS
         for key, label in step
-        if patient_intake_state is None or _is_blank(getattr(patient_intake_state, key))
+        if _is_blank(getattr(patient_intake_state, key))
     ]
     if missing:
         return json.dumps(

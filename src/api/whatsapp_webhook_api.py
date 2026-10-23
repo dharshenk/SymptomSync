@@ -5,6 +5,7 @@ from src.api.services.appointment_service import AppointmentService
 from src.api.agent_tools import ToolContext
 from src.api.clients.postgres_sql_client import PostgresSQLClient
 from src.api.models.chat_session_model import ChatMessage, SenderType
+from src.api.models.patient_intake_model import PatientIntakeState
 from src.api.models.patient_model import Patient
 from src.api.models.telegram_model import TelegramUpdate
 from src.api.clients.whatsapp_client import WhatsAppClient, WhatsAppConfig
@@ -202,11 +203,20 @@ async def get_response(
         patient.id
     )
 
+    patient_intake_state = await patient_intake_service.get_intake_state(
+        chat_session.id
+    )
+    if not patient_intake_state:
+        patient_intake_state = await patient_intake_service.create_intake_state(
+            PatientIntakeState(chat_session_id=chat_session.id)
+        )
+
     tool_context = ToolContext(
         patient_id=patient.id,
         chat_session_id=chat_session.id,
         appointment_service=appointment_service,
         patient_intake_service=patient_intake_service,
+        patient_intake_state=patient_intake_state,
         doctor_id=uuid.UUID("11111111-1111-1111-1111-111111111111"),
         appointment=latest_appointment,
         appointment_date=(

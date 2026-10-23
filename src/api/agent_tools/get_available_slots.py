@@ -27,16 +27,12 @@ async def get_available_slots(wrapper: RunContextWrapper[ToolContext]) -> str:
     returned start times to the patient as choices; times are plain clock times with
     no timezone.
     """
-    patient_intake_state = (
-        await wrapper.context.patient_intake_service.get_intake_state(
-            wrapper.context.chat_session_id
-        )
-    )
+    patient_intake_state = wrapper.context.patient_intake_state
     missing = [
         label
         for step in INTAKE_STEPS
         for key, label in step
-        if patient_intake_state is None or _is_blank(getattr(patient_intake_state, key))
+        if _is_blank(getattr(patient_intake_state, key))
     ]
     if missing:
         return json.dumps(

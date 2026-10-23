@@ -7,6 +7,7 @@ from agents import RunContextWrapper
 from pydantic import BaseModel, ConfigDict, Field
 
 from src.api.models.appointment_model import Appointment
+from src.api.models.patient_intake_model import PatientIntakeState
 from src.api.services.appointment_service import AppointmentService
 from src.api.services.patient_intake_service import PatientIntakeService
 from src.api.telemetry import traced
@@ -19,6 +20,8 @@ class ToolContext(BaseModel):
     chat_session_id: UUID
     appointment_service: AppointmentService
     patient_intake_service: PatientIntakeService
+    # Loaded by the webhook; update_patient_details replaces it after each write.
+    patient_intake_state: PatientIntakeState
     appointment_date: date = Field(
         default_factory=date.today
     )  # our get_available_slots function in the db only looks for one particular day

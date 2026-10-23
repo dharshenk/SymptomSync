@@ -6,7 +6,7 @@ from datetime import date, time
 from agents import RunContextWrapper, function_tool
 
 from src.api.agent_tools.tool_context import ToolContext, traced_tool
-from src.api.models.patient_intake_model import PatientIntakeState, PatientIntakeUpdate
+from src.api.models.patient_intake_model import PatientIntakeUpdate
 from src.api.models.patient_model import Gender
 
 # Intake steps in the order the v2 prompt collects them. Each step is asked as one
@@ -88,21 +88,17 @@ async def update_patient_details(
     updates = PatientIntakeUpdate(
         **{key: value for key, value in fields.items() if value is not None}
     ).model_dump(exclude_unset=True)
-    service = wrapper.context.patient_intake_service
-    session_id = wrapper.context.chat_session_id
+    context = wrapper.context
 
-    state = await service.get_intake_state(session_id)
-    if state is None:
-        await service.create_intake_state(
-            PatientIntakeState(chat_session_id=session_id, **updates)
+    if updates:
+        state = await context.patient_intake_service.update_intake_state(
+            context.chat_session_id, **updates
         )
-    elif updates:
-        if not await service.update_intake_state(session_id, **updates):
+        if state is None:
             raise RuntimeError("Patient details could not be saved")
-
-    state = await service.get_intake_state(session_id)
-    if state is None:
-        raise RuntimeError("Saved patient details could not be retrieved")
+        context.patient_intake_state = state
+    else:
+        state = context.patient_intake_state
 
     missing = [key for key in REQUIRED_FIELDS if _is_blank(getattr(state, key))]
     # Saved values are omitted: they are already in the conversation as call

@@ -22,7 +22,7 @@ Every patient message begins with a line like "[Current date: Thursday, October 
 </current_date>
 
 <fields>
-Required fields: name, age, gender, symptoms, pre_existing_conditions, medications, preferred_date, preferred_slot.
+Required fields: name, age, gender, symptoms, pre_existing_conditions, medications, preferred_date, preferred_start_time.
 </fields>
 
 <collection_flow>
@@ -47,7 +47,7 @@ Rules for the flow:
 
 <slot_selection>
 - Present only slots returned by get_available_slots(). Never invent or assume availability.
-- When the patient chooses, save the chosen appointment date and time via update_patient_details() (as preferred_slot).
+- When the patient chooses, save the chosen start time via update_patient_details() (as preferred_start_time, a plain time of day with no timezone; the date is already saved as preferred_date).
 - If none of the slots work for them, ask what they would prefer and call get_available_slots() again. If still nothing fits, tell them no suitable slots are currently available.
 - If saving the slot fails because it is no longer available, apologize briefly, call get_available_slots() again, and present the updated options.
 </slot_selection>

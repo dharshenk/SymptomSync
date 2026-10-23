@@ -1,6 +1,6 @@
 """Service-free tests for intake persistence and partial update behavior."""
 
-from datetime import datetime, timezone
+from datetime import datetime, time, timezone
 from unittest.mock import Mock
 from uuid import uuid4
 
@@ -77,12 +77,12 @@ async def test_update_serializes_datetime_and_gender(service, client):
     assert await service.update_intake_state(
         uuid4(),
         gender="female",
-        preferred_slot=slot,
+        preferred_start_time=time(9, 0),
         status="completed",
         completed_at=slot,
     )
     params = client.execute_command.call_args.args[1]
-    assert params["preferred_slot"] == slot.isoformat().replace("+00:00", "Z")
+    assert params["preferred_start_time"] == "09:00:00"
     assert params["gender"] == "female"
     assert params["status"] == "completed"
 

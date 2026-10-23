@@ -129,12 +129,17 @@ class PostgresSQLClient:
         query: str,
         params: tuple | dict | None = None,
         fetch: str = "all",
+        commit: bool = False,
     ) -> list[dict[str, Any]] | None:
+        """Run a query and return its rows.
+
+        Pass commit=True for writes that use RETURNING, so the change is persisted.
+        """
 
         if fetch not in ("all", "one"):
             raise ValueError("Fetch mode must be either 'all' or 'one'")
 
-        with self.get_connection() as conn:
+        with self.transaction() if commit else self.get_connection() as conn:
             with conn.cursor(cursor_factory=RealDictCursor) as cursor:
                 cursor.execute(query, params)
                 if fetch == "all":

@@ -31,7 +31,7 @@ class AppointmentService:
         return f"APT-{date_str}-{time_str}-{random_suffix}"
 
     async def get_available_slots(
-        self, doctor_id: UUID, appointment_date: date
+        self, doctor_id: UUID, preferred_date: date
     ) -> list[dict] | None:
         """
         Get available slots for a doctor on a specific date using the PostgreSQL function.
@@ -47,7 +47,7 @@ class AppointmentService:
             SELECT *
             FROM get_available_slots(%(doctor_id)s, %(appointment_date)s::date);
         """
-        params = {"doctor_id": str(doctor_id), "appointment_date": appointment_date}
+        params = {"doctor_id": str(doctor_id), "appointment_date": preferred_date}
 
         try:
             rows = self._postgres_client.execute_query(query, params, fetch="all")

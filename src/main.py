@@ -8,10 +8,9 @@ import os
 from src.api.clients.postgres_sql_client import PostgresSQLClient, DatabaseConfig
 from src.api.whatsapp_webhook_api import router as WhatsappRouter
 from src.api.health_api import router as HealthRouter
-from src.api.services.function_tool_service import (
-    book_appointment,
-    generate_patient_report,
+from src.api.agent_tools import (
     get_available_slots,
+    book_appointment,
     update_patient_details,
 )
 
@@ -42,12 +41,7 @@ async def lifespan(app: FastAPI):
         name="assistant",
         model=os.getenv("LLM_MODEL") or LitellmModel(model=os.getenv("LITE_LLM_MODEL")),
         model_settings=model_settings,
-        tools=[
-            book_appointment,
-            generate_patient_report,
-            get_available_slots,
-            update_patient_details,
-        ],
+        tools=[update_patient_details, get_available_slots, book_appointment],
     )
 
     yield

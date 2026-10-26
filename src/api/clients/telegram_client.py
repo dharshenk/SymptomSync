@@ -80,6 +80,18 @@ class TelegramClient:
 
         return session
 
+    @traced("telegram.answer_callback_query")
+    def answer_callback_query(
+        self, callback_query_id: str, text: str | None = None
+    ) -> dict[str, Any]:
+        """Acknowledge an inline button press so Telegram stops its loading spinner"""
+        url = f"{self.config.api_url}/answerCallbackQuery"
+        payload: dict[str, Any] = {"callback_query_id": callback_query_id}
+        if text is not None:
+            payload["text"] = text
+
+        return self._post(url, payload)
+
     @traced("telegram.send_message")
     def send_message(
         self, chat_id: str, text: str, reply_markup: dict | None = None
@@ -92,6 +104,13 @@ class TelegramClient:
 
         self.logger.info(f"Sending message to chat_id={chat_id}")
 
+        result = self._post(url, payload)
+        self.logger.info(
+            f"Message sent successfully. message_id: {result.get('result', {}).get('message_id', 'unknown')}"
+        )
+        return result
+
+    def _post(self, url: str, payload: dict[str, Any]) -> dict[str, Any]:
         try:
             response = self.session.post(
                 url,
@@ -109,9 +128,6 @@ class TelegramClient:
                     details=result,
                 )
 
-            self.logger.info(
-                f"Message sent successfully. message_id: {result.get('result', {}).get('message_id', 'unknown')}"
-            )
             return result
 
         except requests.exceptions.HTTPError as e:

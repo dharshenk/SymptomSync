@@ -29,3 +29,16 @@ def test_send_message_includes_reply_markup(client):
     client.send_message("42", "hi", reply_markup=markup)
 
     assert sent_payload(client)["reply_markup"] == markup
+
+
+def test_answer_callback_query_posts_to_answer_endpoint(client):
+    client.answer_callback_query("cb-1")
+
+    assert client.session.post.call_args.args[0].endswith("/answerCallbackQuery")
+    assert sent_payload(client) == {"callback_query_id": "cb-1"}
+
+
+def test_answer_callback_query_includes_text(client):
+    client.answer_callback_query("cb-1", text="Done")
+
+    assert sent_payload(client) == {"callback_query_id": "cb-1", "text": "Done"}

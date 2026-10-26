@@ -18,6 +18,7 @@ from src.api.services.patient_service import PatientService
 from src.api.services.doctor_service import DoctorService
 from src.api.services.chat_history_service import ChatHistoryService
 from src.api.services.appointment_service import AppointmentService
+from src.api.services.pending_approval_service import PendingApprovalService
 from src.api.models.patient_model import Patient
 from src.api.models.doctor_model import Doctor
 
@@ -134,6 +135,20 @@ def setup_schema(db_client: PostgresSQLClient) -> Generator[None, None, None]:
             item JSON NOT NULL,
             created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
             UNIQUE(session_id, item_sequence)
+        );
+        """
+    )
+
+    db_client.execute_command(
+        """
+        CREATE TABLE IF NOT EXISTS pending_approvals (
+            id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+            chat_session_id UUID NOT NULL UNIQUE
+                REFERENCES chat_sessions(id) ON DELETE CASCADE,
+            run_state TEXT NOT NULL,
+            user_item JSON NOT NULL,
+            user_message_sequence INTEGER NOT NULL,
+            created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
         );
         """
     )
@@ -390,6 +405,7 @@ def setup_schema(db_client: PostgresSQLClient) -> Generator[None, None, None]:
     # Teardown: drop tables in reverse FK order
     for table in (
         "appointments",
+        "pending_approvals",
         "chat_agent_items",
         "chat_messages",
         "chat_sessions",
@@ -428,6 +444,11 @@ def doctor_service(db_client: PostgresSQLClient) -> DoctorService:
 @pytest.fixture()
 def chat_history_service(db_client: PostgresSQLClient) -> ChatHistoryService:
     return ChatHistoryService(db_client)
+
+
+@pytest.fixture()
+def pending_approval_service(db_client: PostgresSQLClient) -> PendingApprovalService:
+    return PendingApprovalService(db_client)
 
 
 @pytest.fixture()

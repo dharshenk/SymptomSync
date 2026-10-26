@@ -255,6 +255,18 @@ def deliver_reply(telegram_client: TelegramClient, chat_id: str, reply: str | di
         logger.exception("Failed to send Telegram reply to chat_id=%s", chat_id)
 
 
+def acknowledge_button_press(telegram_client: TelegramClient, callback_query_id: str):
+    """Stop the button's loading spinner; a failure is logged, not raised.
+
+    Telegram only accepts this for a short time after the press, and the
+    decision can still be processed without it.
+    """
+    try:
+        telegram_client.answer_callback_query(callback_query_id)
+    except TelegramAPIError:
+        logger.exception("Failed to answer callback_query_id=%s", callback_query_id)
+
+
 async def finalize_run(
     result,
     tool_context: ToolContext,
@@ -428,6 +440,10 @@ async def handle_approval(
     sender = callback_query or approval_update.message
     if sender is None:
         raise HTTPException(status_code=422, detail="Expected a callback_query")
+
+    # Answer first: the agent run below can take long enough for the query to expire.
+    if callback_query:
+        acknowledge_button_press(telegram_client, callback_query.id)
 
     patient_ph_no = str(sender.from_user.id)
     session_id = session_id_for(patient_ph_no)

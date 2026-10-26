@@ -225,3 +225,33 @@ def test_deliver_reply_swallows_telegram_errors():
     webhook.deliver_reply(telegram, "42", "hi")
 
     telegram.send_message.assert_called_once_with("42", text="hi")
+
+
+async def test_button_press_is_answered_before_agent_runs(approval_env):
+    order = []
+    approval_env.telegram.answer_callback_query.side_effect = lambda *a: order.append(
+        "answer"
+    )
+    webhook.run_agent.side_effect = lambda *a, **k: order.append("run") or "result"
+
+    await approval_env.call(callback_update("approve"))
+
+    approval_env.telegram.answer_callback_query.assert_called_once_with("cb")
+    assert order == ["answer", "run"]
+
+
+async def test_button_press_is_answered_even_when_nothing_pending(approval_env):
+    approval_env.pending_service.get.return_value = None
+
+    await approval_env.call(callback_update("approve"))
+
+    approval_env.telegram.answer_callback_query.assert_called_once_with("cb")
+
+
+async def test_failed_answer_does_not_block_the_decision(approval_env):
+    approval_env.telegram.answer_callback_query.side_effect = TelegramAPIError("old")
+
+    reply = await approval_env.call(callback_update("approve"))
+
+    approval_env.state.approve.assert_called_once_with(approval_env.interruption)
+    assert reply == "final"

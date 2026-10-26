@@ -11,3 +11,5 @@ class PendingApproval(BaseModel):
     run_state: str  # RunState.to_string()
     user_item: dict[str, Any]
     user_message_sequence: int
+    # 'processing' while a decision is being applied (see PendingApprovalService)
+    status: str = "pending"

@@ -25,12 +25,20 @@ class Message(BaseModel):
     text: str
 
 
+class CallbackMessage(BaseModel):
+    """The bot message a pressed button is attached to."""
+
+    message_id: int
+    chat: Chat
+
+
 class CallbackQuery(BaseModel):
     """Sent by Telegram when the patient taps an inline keyboard button."""
 
     id: str
     from_user: FromUser = Field(..., alias="from")
     data: str | None = None
+    message: CallbackMessage | None = None
 
     class Config:
         populate_by_name = True

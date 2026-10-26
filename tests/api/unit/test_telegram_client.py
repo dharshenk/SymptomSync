@@ -42,3 +42,14 @@ def test_answer_callback_query_includes_text(client):
     client.answer_callback_query("cb-1", text="Done")
 
     assert sent_payload(client) == {"callback_query_id": "cb-1", "text": "Done"}
+
+
+def test_remove_inline_keyboard_clears_markup(client):
+    client.remove_inline_keyboard("42", 7)
+
+    assert client.session.post.call_args.args[0].endswith("/editMessageReplyMarkup")
+    assert sent_payload(client) == {
+        "chat_id": "42",
+        "message_id": 7,
+        "reply_markup": {"inline_keyboard": []},
+    }

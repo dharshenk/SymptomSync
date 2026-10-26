@@ -124,7 +124,9 @@ def approval_env(monkeypatch):
     )
     monkeypatch.setattr(webhook, "finalize_run", AsyncMock(return_value="final"))
     pending_service = Mock()
-    pending_service.get = AsyncMock(
+    pending_service.save = AsyncMock()
+    pending_service.get = AsyncMock(return_value="pending")
+    pending_service.claim = AsyncMock(
         return_value=PendingApproval(
             chat_session_id=uuid4(),
             run_state="s",
@@ -185,7 +187,7 @@ async def test_changes_needed_rejects_with_message_and_resumes(approval_env):
 
 
 async def test_nothing_pending_does_not_run_agent(approval_env):
-    approval_env.pending_service.get.return_value = None
+    approval_env.pending_service.claim.return_value = None
 
     reply = await approval_env.call(callback_query("approve"))
 
@@ -271,7 +273,7 @@ async def test_button_press_is_answered_before_agent_runs(approval_env):
 
 
 async def test_button_press_is_answered_even_when_nothing_pending(approval_env):
-    approval_env.pending_service.get.return_value = None
+    approval_env.pending_service.claim.return_value = None
 
     await approval_env.call(callback_query("approve"))
 
@@ -285,3 +287,70 @@ async def test_failed_answer_does_not_block_the_decision(approval_env):
 
     approval_env.state.approve.assert_called_once_with(approval_env.interruption)
     assert reply == "final"
+
+
+async def test_decision_claims_pending_and_removes_buttons(approval_env):
+    update = callback_query("approve")
+    update.message = SimpleNamespace(message_id=7, chat=SimpleNamespace(id=42))
+
+    await approval_env.call(update)
+
+    approval_env.pending_service.claim.assert_awaited_once()
+    approval_env.telegram.remove_inline_keyboard.assert_called_once_with("42", 7)
+
+
+async def test_failed_button_removal_does_not_block_the_decision(approval_env):
+    update = callback_query("approve")
+    update.message = SimpleNamespace(message_id=7, chat=SimpleNamespace(id=42))
+    approval_env.telegram.remove_inline_keyboard.side_effect = TelegramAPIError("x")
+
+    reply = await approval_env.call(update)
+
+    assert reply == "final"
+
+
+async def test_failed_resume_restores_pending(approval_env):
+    webhook.run_agent.side_effect = RuntimeError("boom")
+
+    with pytest.raises(RuntimeError):
+        await approval_env.call(callback_query("approve"))
+
+    approval_env.pending_service.save.assert_awaited_once()
+
+
+async def test_message_while_decision_is_processing_does_not_run_agent():
+    pending_service = Mock()
+    pending_service.get = AsyncMock(
+        return_value=PendingApproval(
+            chat_session_id=uuid4(),
+            run_state="s",
+            user_item={},
+            user_message_sequence=1,
+            status="processing",
+        )
+    )
+    patient_service = Mock()
+    patient_service.get_patient_by_patient_ph_no = AsyncMock(
+        return_value=SimpleNamespace(id=uuid4())
+    )
+    history = Mock()
+    history.get_session = AsyncMock(return_value=SimpleNamespace(id=uuid4()))
+    telegram = Mock()
+    message = TelegramWebhookUpdate.model_validate(
+        {"update_id": 1, "message": MESSAGE}
+    ).message
+
+    reply = await webhook.handle_message(
+        message,
+        patient_service,
+        history,
+        Mock(),
+        pending_service,
+        Mock(),
+        telegram,
+        Mock(),
+    )
+
+    assert "Still working" in reply
+    telegram.send_message.assert_called_once_with("42", text=reply)
+    history.add_message.assert_not_called()

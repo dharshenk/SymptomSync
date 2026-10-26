@@ -92,6 +92,17 @@ class TelegramClient:
 
         return self._post(url, payload)
 
+    @traced("telegram.remove_inline_keyboard")
+    def remove_inline_keyboard(self, chat_id: str, message_id: int) -> dict[str, Any]:
+        """Remove the inline buttons from a sent message"""
+        url = f"{self.config.api_url}/editMessageReplyMarkup"
+        payload = {
+            "chat_id": chat_id,
+            "message_id": message_id,
+            "reply_markup": {"inline_keyboard": []},
+        }
+        return self._post(url, payload)
+
     @traced("telegram.send_message")
     def send_message(
         self, chat_id: str, text: str, reply_markup: dict | None = None

@@ -271,6 +271,21 @@ def acknowledge_button_press(telegram_client: TelegramClient, callback_query_id:
         logger.exception("Failed to answer callback_query_id=%s", callback_query_id)
 
 
+def remove_buttons(telegram_client: TelegramClient, callback_query: CallbackQuery):
+    """Take the buttons off the pressed message; a failure is logged, not raised."""
+    if callback_query.message is None:
+        return
+    try:
+        telegram_client.remove_inline_keyboard(
+            str(callback_query.message.chat.id), callback_query.message.message_id
+        )
+    except TelegramAPIError:
+        logger.exception(
+            "Failed to remove buttons from message_id=%s",
+            callback_query.message.message_id,
+        )
+
+
 async def finalize_run(
     result,
     tool_context: ToolContext,
@@ -355,8 +370,13 @@ async def handle_message(
         {"patient.id": str(patient.id), "chat_session.id": str(chat_session.id)}
     )
 
-    # A run is paused waiting for a decision: don't start another one.
-    if await pending_approval_service.get(chat_session.id):
+    # A run is paused (or its decision is being applied): don't start another one.
+    pending = await pending_approval_service.get(chat_session.id)
+    if pending and pending.status == "processing":
+        reply = "Still working on your booking, one moment."
+        deliver_reply(telegram_client, patient_ph_no, reply)
+        return reply
+    if pending:
         intake_state = await patient_intake_service.get_intake_state(chat_session.id)
         prompt = approval_prompt(intake_state)
         deliver_reply(telegram_client, patient_ph_no, prompt)
@@ -425,17 +445,55 @@ async def handle_approval(
     patient_ph_no = str(callback_query.from_user.id)
     session_id = session_id_for(patient_ph_no)
 
-    pending = await pending_approval_service.get(session_id)
-    if not pending:
-        return "There is nothing waiting for your approval."
-
     decision = callback_query.data
     if decision not in (APPROVE, CHANGES_NEEDED):
+        if not await pending_approval_service.get(session_id):
+            return "There is nothing waiting for your approval."
         intake_state = await patient_intake_service.get_intake_state(session_id)
         prompt = approval_prompt(intake_state)
         deliver_reply(telegram_client, patient_ph_no, prompt)
         return prompt
 
+    # Claiming deletes the row, so a repeated press finds nothing and cannot
+    # resume the same run twice.
+    pending = await pending_approval_service.claim(session_id)
+    if not pending:
+        return "There is nothing waiting for your approval."
+    remove_buttons(telegram_client, callback_query)
+
+    try:
+        return await resume_approval(
+            pending,
+            decision,
+            patient_ph_no,
+            session_id,
+            patient_service,
+            chat_history_service,
+            patient_intake_service,
+            pending_approval_service,
+            agent,
+            telegram_client,
+            appointment_service,
+        )
+    except Exception:
+        # The decision wasn't applied: restore the prompt so it can be retried.
+        await pending_approval_service.save(pending)
+        raise
+
+
+async def resume_approval(
+    pending: PendingApproval,
+    decision: str,
+    patient_ph_no: str,
+    session_id,
+    patient_service: PatientService,
+    chat_history_service: ChatHistoryService,
+    patient_intake_service: PatientIntakeService,
+    pending_approval_service: PendingApprovalService,
+    agent: Agent,
+    telegram_client: TelegramClient,
+    appointment_service: AppointmentService,
+):
     patient = await patient_service.get_patient_by_patient_ph_no(patient_ph_no)
     if not patient:
         raise HTTPException(status_code=404, detail="Patient not found")

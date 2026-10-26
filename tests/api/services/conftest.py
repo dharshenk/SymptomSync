@@ -148,8 +148,17 @@ def setup_schema(db_client: PostgresSQLClient) -> Generator[None, None, None]:
             run_state TEXT NOT NULL,
             user_item JSON NOT NULL,
             user_message_sequence INTEGER NOT NULL,
+            status VARCHAR(20) NOT NULL DEFAULT 'pending',
+            claimed_at TIMESTAMP WITH TIME ZONE,
             created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
         );
+        """
+    )
+    db_client.execute_command(
+        """
+        ALTER TABLE pending_approvals
+            ADD COLUMN IF NOT EXISTS status VARCHAR(20) NOT NULL DEFAULT 'pending',
+            ADD COLUMN IF NOT EXISTS claimed_at TIMESTAMP WITH TIME ZONE;
         """
     )
 

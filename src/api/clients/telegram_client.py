@@ -81,10 +81,14 @@ class TelegramClient:
         return session
 
     @traced("telegram.send_message")
-    def send_message(self, chat_id: str, text: str) -> dict[str, Any]:
-        """Send a text message to a Telegram chat"""
+    def send_message(
+        self, chat_id: str, text: str, reply_markup: dict | None = None
+    ) -> dict[str, Any]:
+        """Send a text message to a Telegram chat, optionally with an inline keyboard"""
         url = f"{self.config.api_url}/sendMessage"
-        payload = {"chat_id": chat_id, "text": text}
+        payload: dict[str, Any] = {"chat_id": chat_id, "text": text}
+        if reply_markup is not None:
+            payload["reply_markup"] = reply_markup
 
         self.logger.info(f"Sending message to chat_id={chat_id}")
 

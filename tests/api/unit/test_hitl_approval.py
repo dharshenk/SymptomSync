@@ -1,4 +1,4 @@
-"""Human-in-the-loop approval for book_appointment and the /webhook/approval route."""
+"""Human-in-the-loop approval for book_appointment and the /webhook dispatcher."""
 
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, Mock
@@ -11,16 +11,16 @@ from src.api import whatsapp_webhook_api as webhook
 from src.api.agent_tools.book_appointment import book_appointment
 from src.api.clients.telegram_client import TelegramAPIError
 from src.api.models.pending_approval_model import PendingApproval
-from src.api.models.telegram_model import TelegramApprovalUpdate
+from src.api.models.telegram_model import TelegramWebhookUpdate
 from tests.api.unit.test_agent_tools_context import FULL, make_context
 
 USER = {"id": 42, "is_bot": False, "first_name": "Pat", "language_code": "en"}
 
 
-def callback_update(data):
-    return TelegramApprovalUpdate.model_validate(
+def callback_query(data):
+    return TelegramWebhookUpdate.model_validate(
         {"update_id": 1, "callback_query": {"id": "cb", "from": USER, "data": data}}
-    )
+    ).callback_query
 
 
 async def needs_approval(context):
@@ -38,20 +38,9 @@ async def test_no_approval_while_any_field_missing(field):
     assert await needs_approval(context) is False
 
 
-def test_approval_update_parses_button_press_and_message():
-    assert callback_update("approve").callback_query.data == "approve"
-    text = TelegramApprovalUpdate.model_validate(
-        {
-            "update_id": 2,
-            "message": {
-                "message_id": 1,
-                "from": USER,
-                "chat": {"id": 42, "first_name": "Pat", "type": "private"},
-                "date": 0,
-                "text": "hi",
-            },
-        }
-    )
+def test_webhook_update_parses_button_press_and_message():
+    assert callback_query("approve").data == "approve"
+    text = TelegramWebhookUpdate.model_validate({"update_id": 2, "message": MESSAGE})
     assert text.callback_query is None and text.message.text == "hi"
 
 
@@ -176,7 +165,7 @@ def approval_env(monkeypatch):
 
 
 async def test_go_ahead_approves_and_resumes(approval_env):
-    reply = await approval_env.call(callback_update("approve"))
+    reply = await approval_env.call(callback_query("approve"))
 
     approval_env.state.approve.assert_called_once_with(approval_env.interruption)
     approval_env.state.reject.assert_not_called()
@@ -185,7 +174,7 @@ async def test_go_ahead_approves_and_resumes(approval_env):
 
 
 async def test_changes_needed_rejects_with_message_and_resumes(approval_env):
-    await approval_env.call(callback_update("changes_needed"))
+    await approval_env.call(callback_query("changes_needed"))
 
     approval_env.state.reject.assert_called_once_with(
         approval_env.interruption,
@@ -198,23 +187,64 @@ async def test_changes_needed_rejects_with_message_and_resumes(approval_env):
 async def test_nothing_pending_does_not_run_agent(approval_env):
     approval_env.pending_service.get.return_value = None
 
-    reply = await approval_env.call(callback_update("approve"))
+    reply = await approval_env.call(callback_query("approve"))
 
     assert "nothing waiting" in reply
     webhook.run_agent.assert_not_called()
 
 
 async def test_unknown_decision_reprompts_without_running(approval_env):
-    reply = await approval_env.call(callback_update("bogus"))
+    reply = await approval_env.call(callback_query("bogus"))
 
     assert "reply_markup" in reply
     approval_env.telegram.send_message.assert_called_once_with("42", **reply)
     webhook.run_agent.assert_not_called()
 
 
-async def test_update_without_sender_is_rejected(approval_env):
+MESSAGE = {
+    "message_id": 1,
+    "from": USER,
+    "chat": {"id": 42, "first_name": "Pat", "type": "private"},
+    "date": 0,
+    "text": "hi",
+}
+
+
+async def dispatch(monkeypatch, payload):
+    handle_approval = AsyncMock(return_value="approval")
+    handle_message = AsyncMock(return_value="message")
+    monkeypatch.setattr(webhook, "handle_approval", handle_approval)
+    monkeypatch.setattr(webhook, "handle_message", handle_message)
+    reply = await webhook.telegram_webhook(
+        TelegramWebhookUpdate.model_validate({"update_id": 1, **payload}),
+        *[Mock() for _ in range(7)],
+    )
+    return reply, handle_approval, handle_message
+
+
+async def test_webhook_routes_button_press_to_approval(monkeypatch):
+    payload = {"callback_query": {"id": "cb", "from": USER, "data": "approve"}}
+
+    reply, handle_approval, handle_message = await dispatch(monkeypatch, payload)
+
+    assert reply == "approval"
+    handle_approval.assert_awaited_once()
+    handle_message.assert_not_called()
+
+
+async def test_webhook_routes_text_message_to_agent(monkeypatch):
+    reply, handle_approval, handle_message = await dispatch(
+        monkeypatch, {"message": MESSAGE}
+    )
+
+    assert reply == "message"
+    handle_message.assert_awaited_once()
+    handle_approval.assert_not_called()
+
+
+async def test_webhook_rejects_update_with_neither(monkeypatch):
     with pytest.raises(HTTPException) as exc:
-        await approval_env.call(TelegramApprovalUpdate(update_id=3))
+        await dispatch(monkeypatch, {})
     assert exc.value.status_code == 422
 
 
@@ -234,7 +264,7 @@ async def test_button_press_is_answered_before_agent_runs(approval_env):
     )
     webhook.run_agent.side_effect = lambda *a, **k: order.append("run") or "result"
 
-    await approval_env.call(callback_update("approve"))
+    await approval_env.call(callback_query("approve"))
 
     approval_env.telegram.answer_callback_query.assert_called_once_with("cb")
     assert order == ["answer", "run"]
@@ -243,7 +273,7 @@ async def test_button_press_is_answered_before_agent_runs(approval_env):
 async def test_button_press_is_answered_even_when_nothing_pending(approval_env):
     approval_env.pending_service.get.return_value = None
 
-    await approval_env.call(callback_update("approve"))
+    await approval_env.call(callback_query("approve"))
 
     approval_env.telegram.answer_callback_query.assert_called_once_with("cb")
 
@@ -251,7 +281,7 @@ async def test_button_press_is_answered_even_when_nothing_pending(approval_env):
 async def test_failed_answer_does_not_block_the_decision(approval_env):
     approval_env.telegram.answer_callback_query.side_effect = TelegramAPIError("old")
 
-    reply = await approval_env.call(callback_update("approve"))
+    reply = await approval_env.call(callback_query("approve"))
 
     approval_env.state.approve.assert_called_once_with(approval_env.interruption)
     assert reply == "final"

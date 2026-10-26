@@ -8,7 +8,11 @@ from src.api.models.chat_session_model import ChatMessage, SenderType
 from src.api.models.patient_intake_model import PatientIntakeState
 from src.api.models.patient_model import Patient
 from src.api.models.pending_approval_model import PendingApproval
-from src.api.models.telegram_model import TelegramApprovalUpdate, TelegramUpdate
+from src.api.models.telegram_model import (
+    CallbackQuery,
+    Message,
+    TelegramWebhookUpdate,
+)
 from src.api.clients.whatsapp_client import WhatsAppClient, WhatsAppConfig
 from src.api.clients.telegram_client import (
     TelegramAPIError,
@@ -321,33 +325,21 @@ async def finalize_run(
     return result.final_output
 
 
-@router.post("/webhook")
-async def get_response(
-    # user_input: InputModel,
-    # whatsapp_webhook_request: WhatsAppWebhookRequest,
-    telegram_webhook_request: TelegramUpdate,
-    patient_service: Annotated[PatientService, Depends(get_patient_service)],
-    chat_history_service: Annotated[
-        ChatHistoryService, Depends(get_chat_history_service)
-    ],
-    patient_intake_service: Annotated[
-        PatientIntakeService, Depends(get_patient_intake_service)
-    ],
-    pending_approval_service: Annotated[
-        PendingApprovalService, Depends(get_pending_approval_service)
-    ],
-    agent: Annotated[Agent, Depends(get_agent)],
-    telegram_client: Annotated[TelegramClient, Depends(get_telegram_client)],
-    appointment_service: Annotated[
-        AppointmentService, Depends(get_appointment_service)
-    ],
+async def handle_message(
+    message: Message,
+    patient_service: PatientService,
+    chat_history_service: ChatHistoryService,
+    patient_intake_service: PatientIntakeService,
+    pending_approval_service: PendingApprovalService,
+    agent: Agent,
+    telegram_client: TelegramClient,
+    appointment_service: AppointmentService,
 ):
-    patient_ph_no = str(telegram_webhook_request.message.from_user.id)
+    """Run the agent on a patient's chat message."""
+    patient_ph_no = str(message.from_user.id)
     session_id = session_id_for(patient_ph_no)
     today_str = date.today().strftime("%A, %B %d, %Y")
-    patient_message = (
-        f"[Current date: {today_str}]\n{telegram_webhook_request.message.text}"
-    )
+    patient_message = f"[Current date: {today_str}]\n{message.text}"
 
     patient = await patient_service.get_patient_by_patient_ph_no(patient_ph_no)
     if not patient:
@@ -416,43 +408,28 @@ async def get_response(
     )
 
 
-@router.post("/webhook/approval")
 async def handle_approval(
-    approval_update: TelegramApprovalUpdate,
-    patient_service: Annotated[PatientService, Depends(get_patient_service)],
-    chat_history_service: Annotated[
-        ChatHistoryService, Depends(get_chat_history_service)
-    ],
-    patient_intake_service: Annotated[
-        PatientIntakeService, Depends(get_patient_intake_service)
-    ],
-    pending_approval_service: Annotated[
-        PendingApprovalService, Depends(get_pending_approval_service)
-    ],
-    agent: Annotated[Agent, Depends(get_agent)],
-    telegram_client: Annotated[TelegramClient, Depends(get_telegram_client)],
-    appointment_service: Annotated[
-        AppointmentService, Depends(get_appointment_service)
-    ],
+    callback_query: CallbackQuery,
+    patient_service: PatientService,
+    chat_history_service: ChatHistoryService,
+    patient_intake_service: PatientIntakeService,
+    pending_approval_service: PendingApprovalService,
+    agent: Agent,
+    telegram_client: TelegramClient,
+    appointment_service: AppointmentService,
 ):
     """Resume a paused run with the patient's Go Ahead / Changes needed decision."""
-    callback_query = approval_update.callback_query
-    sender = callback_query or approval_update.message
-    if sender is None:
-        raise HTTPException(status_code=422, detail="Expected a callback_query")
-
     # Answer first: the agent run below can take long enough for the query to expire.
-    if callback_query:
-        acknowledge_button_press(telegram_client, callback_query.id)
+    acknowledge_button_press(telegram_client, callback_query.id)
 
-    patient_ph_no = str(sender.from_user.id)
+    patient_ph_no = str(callback_query.from_user.id)
     session_id = session_id_for(patient_ph_no)
 
     pending = await pending_approval_service.get(session_id)
     if not pending:
         return "There is nothing waiting for your approval."
 
-    decision = callback_query.data if callback_query else None
+    decision = callback_query.data
     if decision not in (APPROVE, CHANGES_NEEDED):
         intake_state = await patient_intake_service.get_intake_state(session_id)
         prompt = approval_prompt(intake_state)
@@ -493,6 +470,53 @@ async def handle_approval(
         pending_approval_service,
         telegram_client,
         patient_ph_no,
+    )
+
+
+@router.post("/webhook")
+async def telegram_webhook(
+    update: TelegramWebhookUpdate,
+    patient_service: Annotated[PatientService, Depends(get_patient_service)],
+    chat_history_service: Annotated[
+        ChatHistoryService, Depends(get_chat_history_service)
+    ],
+    patient_intake_service: Annotated[
+        PatientIntakeService, Depends(get_patient_intake_service)
+    ],
+    pending_approval_service: Annotated[
+        PendingApprovalService, Depends(get_pending_approval_service)
+    ],
+    agent: Annotated[Agent, Depends(get_agent)],
+    telegram_client: Annotated[TelegramClient, Depends(get_telegram_client)],
+    appointment_service: Annotated[
+        AppointmentService, Depends(get_appointment_service)
+    ],
+):
+    """Single Telegram entry point: a button press resumes a paused run, a message starts one."""
+    if update.callback_query:
+        return await handle_approval(
+            update.callback_query,
+            patient_service,
+            chat_history_service,
+            patient_intake_service,
+            pending_approval_service,
+            agent,
+            telegram_client,
+            appointment_service,
+        )
+    if update.message:
+        return await handle_message(
+            update.message,
+            patient_service,
+            chat_history_service,
+            patient_intake_service,
+            pending_approval_service,
+            agent,
+            telegram_client,
+            appointment_service,
+        )
+    raise HTTPException(
+        status_code=422, detail="Expected a message or a callback_query"
     )
 
 

@@ -25,16 +25,6 @@ class Message(BaseModel):
     text: str
 
 
-class TelegramUpdate(BaseModel):
-    update_id: int
-    message: Message
-
-    class Config:
-        # This allows you to populate the model using the python-friendly names
-        # (like from_user) if you ever create it manually.
-        populate_by_name = True
-
-
 class CallbackQuery(BaseModel):
     """Sent by Telegram when the patient taps an inline keyboard button."""
 
@@ -46,8 +36,8 @@ class CallbackQuery(BaseModel):
         populate_by_name = True
 
 
-class TelegramApprovalUpdate(BaseModel):
-    """Update accepted by /webhook/approval: a button press or a plain message."""
+class TelegramWebhookUpdate(BaseModel):
+    """Update accepted by /webhook: a plain message or an inline button press."""
 
     update_id: int
     callback_query: CallbackQuery | None = None

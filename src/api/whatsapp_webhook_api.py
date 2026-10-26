@@ -10,13 +10,18 @@ from src.api.models.patient_model import Patient
 from src.api.models.pending_approval_model import PendingApproval
 from src.api.models.telegram_model import TelegramApprovalUpdate, TelegramUpdate
 from src.api.clients.whatsapp_client import WhatsAppClient, WhatsAppConfig
-from src.api.clients.telegram_client import TelegramClient, TelegramConfig
+from src.api.clients.telegram_client import (
+    TelegramAPIError,
+    TelegramClient,
+    TelegramConfig,
+)
 from src.api.services.patient_service import PatientService
 from src.api.services.patient_intake_service import PatientIntakeService
 from src.api.services.pending_approval_service import PendingApprovalService
 from agents import Agent, RunContextWrapper, RunState, Runner, ToolApprovalItem
 from dotenv import load_dotenv
 from fastapi import Depends, APIRouter, HTTPException, Request
+import logging
 import uuid
 import os
 from datetime import date
@@ -28,6 +33,8 @@ load_dotenv()
 SYSTEM_PROMPT_PATH = os.getenv("SYSTEM_PROMPT_PATH")
 VERIFY_TOKEN = os.getenv("VERIFY_TOKEN")
 WHATSAPP_RECIPIENT_NUMBER = os.getenv("WHATSAPP_RECIPIENT_NUMBER")
+
+logger = logging.getLogger(__name__)
 
 DOCTOR_ID = uuid.UUID("11111111-1111-1111-1111-111111111111")
 
@@ -235,6 +242,19 @@ def approval_prompt(intake_state: PatientIntakeState) -> dict:
     }
 
 
+def deliver_reply(telegram_client: TelegramClient, chat_id: str, reply: str | dict):
+    """Push a reply to the chat; a dict is a prompt with `text` and `reply_markup`.
+
+    A failed send is logged, not raised: the run is already persisted, and an
+    error response would make Telegram redeliver the update and re-run the agent.
+    """
+    prompt = reply if isinstance(reply, dict) else {"text": reply}
+    try:
+        telegram_client.send_message(chat_id, **prompt)
+    except TelegramAPIError:
+        logger.exception("Failed to send Telegram reply to chat_id=%s", chat_id)
+
+
 async def finalize_run(
     result,
     tool_context: ToolContext,
@@ -242,8 +262,13 @@ async def finalize_run(
     user_message_sequence: int,
     chat_history_service: ChatHistoryService,
     pending_approval_service: PendingApprovalService,
+    telegram_client: TelegramClient,
+    chat_id: str,
 ):
-    """Persist a finished run, or save a paused one until the patient decides."""
+    """Persist a finished run, or save a paused one until the patient decides.
+
+    Either way the reply is sent to the chat and also returned as the response.
+    """
     chat_session_id = tool_context.chat_session_id
 
     if result.interruptions:
@@ -255,7 +280,9 @@ async def finalize_run(
                 user_message_sequence=user_message_sequence,
             )
         )
-        return approval_prompt(tool_context.patient_intake_state)
+        prompt = approval_prompt(tool_context.patient_intake_state)
+        deliver_reply(telegram_client, chat_id, prompt)
+        return prompt
 
     ai_message = ChatMessage(
         session_id=chat_session_id,
@@ -277,7 +304,7 @@ async def finalize_run(
     await pending_approval_service.delete(chat_session_id)
 
     # whatsapp_client.send_text_message(to=WHATSAPP_RECIPIENT_NUMBER, message=result.final_output)
-    # telegram_client.send_message(patient_ph_no, result.final_output)
+    deliver_reply(telegram_client, chat_id, result.final_output)
 
     return result.final_output
 
@@ -327,7 +354,9 @@ async def get_response(
     # A run is paused waiting for a decision: don't start another one.
     if await pending_approval_service.get(chat_session.id):
         intake_state = await patient_intake_service.get_intake_state(chat_session.id)
-        return approval_prompt(intake_state)
+        prompt = approval_prompt(intake_state)
+        deliver_reply(telegram_client, patient_ph_no, prompt)
+        return prompt
 
     previous_messages = await chat_history_service.get_session_messages(
         session_id=chat_session.id
@@ -370,6 +399,8 @@ async def get_response(
         user_message.message_sequence,
         chat_history_service,
         pending_approval_service,
+        telegram_client,
+        patient_ph_no,
     )
 
 
@@ -387,6 +418,7 @@ async def handle_approval(
         PendingApprovalService, Depends(get_pending_approval_service)
     ],
     agent: Annotated[Agent, Depends(get_agent)],
+    telegram_client: Annotated[TelegramClient, Depends(get_telegram_client)],
     appointment_service: Annotated[
         AppointmentService, Depends(get_appointment_service)
     ],
@@ -407,7 +439,9 @@ async def handle_approval(
     decision = callback_query.data if callback_query else None
     if decision not in (APPROVE, CHANGES_NEEDED):
         intake_state = await patient_intake_service.get_intake_state(session_id)
-        return approval_prompt(intake_state)
+        prompt = approval_prompt(intake_state)
+        deliver_reply(telegram_client, patient_ph_no, prompt)
+        return prompt
 
     patient = await patient_service.get_patient_by_patient_ph_no(patient_ph_no)
     if not patient:
@@ -441,6 +475,8 @@ async def handle_approval(
         pending.user_message_sequence,
         chat_history_service,
         pending_approval_service,
+        telegram_client,
+        patient_ph_no,
     )
 
 

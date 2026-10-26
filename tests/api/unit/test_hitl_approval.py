@@ -9,6 +9,7 @@ from fastapi import HTTPException
 
 from src.api import whatsapp_webhook_api as webhook
 from src.api.agent_tools.book_appointment import book_appointment
+from src.api.clients.telegram_client import TelegramAPIError
 from src.api.models.pending_approval_model import PendingApproval
 from src.api.models.telegram_model import TelegramApprovalUpdate
 from tests.api.unit.test_agent_tools_context import FULL, make_context
@@ -67,7 +68,7 @@ async def test_finalize_run_saves_state_when_paused():
     state = Mock()
     state.to_string.return_value = "serialized"
     result = SimpleNamespace(interruptions=[object()], to_state=lambda: state)
-    pending_service, history_service = Mock(), Mock()
+    pending_service, history_service, telegram = Mock(), Mock(), Mock()
     pending_service.save = AsyncMock()
     history_service.add_message = AsyncMock()
     history_service.add_agent_items = AsyncMock()
@@ -79,11 +80,14 @@ async def test_finalize_run_saves_state_when_paused():
         5,
         history_service,
         pending_service,
+        telegram,
+        "42",
     )
 
     saved: PendingApproval = pending_service.save.await_args.args[0]
     assert (saved.run_state, saved.user_message_sequence) == ("serialized", 5)
     assert "reply_markup" in reply
+    telegram.send_message.assert_called_once_with("42", **reply)
     history_service.add_message.assert_not_called()
     history_service.add_agent_items.assert_not_called()
 
@@ -93,16 +97,24 @@ async def test_finalize_run_persists_and_clears_pending_when_done():
     item = Mock()
     item.to_input_item.return_value = {"type": "message"}
     result = SimpleNamespace(interruptions=[], final_output="Booked!", new_items=[item])
-    pending_service, history_service = Mock(), Mock()
+    pending_service, history_service, telegram = Mock(), Mock(), Mock()
     pending_service.delete = AsyncMock()
     history_service.add_message = AsyncMock()
     history_service.add_agent_items = AsyncMock()
 
     reply = await webhook.finalize_run(
-        result, context, {"role": "user"}, 5, history_service, pending_service
+        result,
+        context,
+        {"role": "user"},
+        5,
+        history_service,
+        pending_service,
+        telegram,
+        "42",
     )
 
     assert reply == "Booked!"
+    telegram.send_message.assert_called_once_with("42", text="Booked!")
     assert history_service.add_message.await_args.args[0].message_sequence == 6
     history_service.add_agent_items.assert_awaited_once_with(
         context.chat_session_id, [{"role": "user"}, {"type": "message"}]
@@ -140,6 +152,8 @@ def approval_env(monkeypatch):
         return_value=make_context(**FULL).patient_intake_state
     )
 
+    telegram = Mock()
+
     async def call(update):
         return await webhook.handle_approval(
             update,
@@ -148,6 +162,7 @@ def approval_env(monkeypatch):
             intake_service,
             pending_service,
             Mock(),
+            telegram,
             Mock(),
         )
 
@@ -156,6 +171,7 @@ def approval_env(monkeypatch):
         state=state,
         interruption=interruption,
         pending_service=pending_service,
+        telegram=telegram,
     )
 
 
@@ -192,6 +208,7 @@ async def test_unknown_decision_reprompts_without_running(approval_env):
     reply = await approval_env.call(callback_update("bogus"))
 
     assert "reply_markup" in reply
+    approval_env.telegram.send_message.assert_called_once_with("42", **reply)
     webhook.run_agent.assert_not_called()
 
 
@@ -199,3 +216,12 @@ async def test_update_without_sender_is_rejected(approval_env):
     with pytest.raises(HTTPException) as exc:
         await approval_env.call(TelegramApprovalUpdate(update_id=3))
     assert exc.value.status_code == 422
+
+
+def test_deliver_reply_swallows_telegram_errors():
+    telegram = Mock()
+    telegram.send_message.side_effect = TelegramAPIError("boom")
+
+    webhook.deliver_reply(telegram, "42", "hi")
+
+    telegram.send_message.assert_called_once_with("42", text="hi")

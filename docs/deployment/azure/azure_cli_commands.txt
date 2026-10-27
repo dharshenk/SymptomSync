@@ -1,0 +1,4 @@
+az containerapp update \
+  --name symptom-sync \
+  --resource-group symptom-sync \
+  --image madhav69/symptom-sync:20261027-095618

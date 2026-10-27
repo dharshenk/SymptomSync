@@ -1,7 +1,7 @@
 ### Build and push the Image
 ```
 IMAGE=madhav69/symptom-sync
-TAG=$(date -u +%Y%m%d-%H%M%S)
+TAG=$(date +%Y%m%d-%H%M%S)
 
 docker build -t $IMAGE:$TAG -t $IMAGE:latest .
 ```

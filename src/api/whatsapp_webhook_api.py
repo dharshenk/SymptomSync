@@ -260,7 +260,7 @@ def deliver_reply(telegram_client: TelegramClient, chat_id: str, reply: str | di
 
 
 def acknowledge_button_press(telegram_client: TelegramClient, callback_query_id: str):
-    """Stop the button's loading spinner; a failure is logged, not raised.
+    """Stop the button's loading spinner (call after the buttons are removed); a failure is logged, not raised.
 
     Telegram only accepts this for a short time after the press, and the
     decision can still be processed without it.
@@ -439,14 +439,15 @@ async def handle_approval(
     appointment_service: AppointmentService,
 ):
     """Resume a paused run with the patient's Go Ahead / Changes needed decision."""
-    # Answer first: the agent run below can take long enough for the query to expire.
-    acknowledge_button_press(telegram_client, callback_query.id)
-
+    # The press is answered only once the buttons are removed (or there is nothing
+    # to remove), so the button's spinner stays until then. That must happen
+    # before the agent run, which can outlast the query's validity.
     patient_ph_no = str(callback_query.from_user.id)
     session_id = session_id_for(patient_ph_no)
 
     decision = callback_query.data
     if decision not in (APPROVE, CHANGES_NEEDED):
+        acknowledge_button_press(telegram_client, callback_query.id)
         if not await pending_approval_service.get(session_id):
             return "There is nothing waiting for your approval."
         intake_state = await patient_intake_service.get_intake_state(session_id)
@@ -458,8 +459,10 @@ async def handle_approval(
     # resume the same run twice.
     pending = await pending_approval_service.claim(session_id)
     if not pending:
+        acknowledge_button_press(telegram_client, callback_query.id)
         return "There is nothing waiting for your approval."
     remove_buttons(telegram_client, callback_query)
+    acknowledge_button_press(telegram_client, callback_query.id)
 
     try:
         return await resume_approval(

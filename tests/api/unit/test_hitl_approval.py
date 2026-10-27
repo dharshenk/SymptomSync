@@ -259,17 +259,24 @@ def test_deliver_reply_swallows_telegram_errors():
     telegram.send_message.assert_called_once_with("42", text="hi")
 
 
-async def test_button_press_is_answered_before_agent_runs(approval_env):
+async def test_button_press_is_answered_after_buttons_removed_before_agent_runs(
+    approval_env,
+):
     order = []
+    approval_env.telegram.remove_inline_keyboard.side_effect = lambda *a: order.append(
+        "remove"
+    )
     approval_env.telegram.answer_callback_query.side_effect = lambda *a: order.append(
         "answer"
     )
     webhook.run_agent.side_effect = lambda *a, **k: order.append("run") or "result"
 
-    await approval_env.call(callback_query("approve"))
+    update = callback_query("approve")
+    update.message = SimpleNamespace(message_id=7, chat=SimpleNamespace(id=42))
+    await approval_env.call(update)
 
     approval_env.telegram.answer_callback_query.assert_called_once_with("cb")
-    assert order == ["answer", "run"]
+    assert order == ["remove", "answer", "run"]
 
 
 async def test_button_press_is_answered_even_when_nothing_pending(approval_env):

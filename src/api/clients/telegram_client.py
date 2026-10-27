@@ -103,6 +103,14 @@ class TelegramClient:
         }
         return self._post(url, payload)
 
+    @traced("telegram.send_typing_action")
+    def send_typing_action(self, chat_id: str) -> dict[str, Any]:
+        """Show Telegram's native typing indicator in a chat."""
+        return self._post(
+            f"{self.config.api_url}/sendChatAction",
+            {"chat_id": chat_id, "action": "typing"},
+        )
+
     @traced("telegram.send_message")
     def send_message(
         self, chat_id: str, text: str, reply_markup: dict | None = None

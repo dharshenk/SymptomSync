@@ -53,3 +53,10 @@ def test_remove_inline_keyboard_clears_markup(client):
         "message_id": 7,
         "reply_markup": {"inline_keyboard": []},
     }
+
+
+def test_send_typing_action(client):
+    client.send_typing_action("42")
+
+    assert client.session.post.call_args.args[0].endswith("/sendChatAction")
+    assert sent_payload(client) == {"chat_id": "42", "action": "typing"}

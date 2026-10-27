@@ -1,5 +1,6 @@
 """Human-in-the-loop approval for book_appointment and the /webhook dispatcher."""
 
+import asyncio
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, Mock
 from uuid import uuid4
@@ -361,3 +362,38 @@ async def test_message_while_decision_is_processing_does_not_run_agent():
     assert "Still working" in reply
     telegram.send_message.assert_called_once_with("42", text=reply)
     history.add_message.assert_not_called()
+
+
+async def test_typing_indicator_refreshes_and_stops(monkeypatch):
+    telegram = Mock()
+    sent = asyncio.Event()
+    calls = []
+    loop = asyncio.get_running_loop()
+
+    def send_action(chat_id):
+        calls.append(chat_id)
+        if len(calls) == 2:
+            loop.call_soon_threadsafe(sent.set)
+
+    telegram.send_typing_action.side_effect = send_action
+    original_wait_for = asyncio.wait_for
+
+    async def fast_wait(awaitable, timeout):
+        return await original_wait_for(awaitable, timeout=0.01)
+
+    monkeypatch.setattr(webhook.asyncio, "wait_for", fast_wait)
+    async with webhook.typing_indicator(telegram, "42"):
+        await original_wait_for(sent.wait(), timeout=1)
+    assert calls == ["42", "42"]
+    await asyncio.sleep(0.03)
+    assert calls == ["42", "42"]
+
+
+async def test_typing_indicator_failure_does_not_fail_run():
+    telegram = Mock()
+    telegram.send_typing_action.side_effect = TelegramAPIError("unavailable")
+
+    async with webhook.typing_indicator(telegram, "42"):
+        pass
+
+    telegram.send_typing_action.assert_called_once_with("42")

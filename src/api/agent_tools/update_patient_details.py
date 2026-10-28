@@ -103,6 +103,9 @@ async def update_patient_details(
     missing = [key for key in REQUIRED_FIELDS if _is_blank(getattr(state, key))]
     # Saved values are omitted: they are already in the conversation as call
     # arguments, and echoing them would bloat context on every call.
-    return json.dumps(
-        {"saved": list(updates), "missing": missing, "next": _next_ask(missing)}
-    )
+    result = {"saved": list(updates), "missing": missing, "next": _next_ask(missing)}
+    if not updates:
+        result["note"] = (
+            "Nothing was saved. Do not call this tool without new or corrected details."
+        )
+    return json.dumps(result)

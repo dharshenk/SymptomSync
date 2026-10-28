@@ -1,3 +1,5 @@
+from src.api.telemetry import trace_db_operation
+
 # api/services/appointment_service.py
 from src.api.clients.postgres_sql_client import PostgresSQLClient
 from src.api.models.appointment_model import Appointment, AppointmentStatus
@@ -30,6 +32,7 @@ class AppointmentService:
         )
         return f"APT-{date_str}-{time_str}-{random_suffix}"
 
+    @trace_db_operation("appointment.get_available_slots")
     async def get_available_slots(
         self, doctor_id: UUID, preferred_date: date
     ) -> list[dict] | None:
@@ -56,6 +59,7 @@ class AppointmentService:
             self._logger.error(f"Error fetching available slots: {str(e)}")
             return None
 
+    @trace_db_operation("appointment.book_appointment")
     async def book_appointment(self, appointment: Appointment) -> bool:
         """
         Book a new appointment using the database function book_appoinment.
@@ -125,6 +129,7 @@ class AppointmentService:
             self._logger.error(f"Error booking appointment: {str(e)}")
             raise
 
+    @trace_db_operation("appointment.cancel_appointment")
     async def cancel_appointment(
         self, appointment_id: UUID, reason: str | None = None
     ) -> bool:
@@ -169,6 +174,7 @@ class AppointmentService:
             self._logger.error(f"Error cancelling appointment: {str(e)}")
             raise
 
+    @trace_db_operation("appointment.get_appointment")
     async def get_appointment(self, appointment_id: UUID) -> Appointment | None:
         """
         Fetch an appointment by ID.
@@ -189,6 +195,7 @@ class AppointmentService:
 
         return Appointment(**rows[0])
 
+    @trace_db_operation("appointment.get_appointment_by_patient_id")
     async def get_appointment_by_patient_id(
         self, patient_id: UUID
     ) -> Appointment | None:
@@ -216,6 +223,7 @@ class AppointmentService:
 
         return Appointment(**rows[0])
 
+    @trace_db_operation("appointment.get_appointment_by_chat_session_id")
     async def get_appointment_by_chat_session_id(
         self, chat_session_id: UUID
     ) -> Appointment | None:
@@ -243,6 +251,7 @@ class AppointmentService:
 
         return Appointment(**rows[0])
 
+    @trace_db_operation("appointment.list_appointments_for_patient")
     async def list_appointments_for_patient(
         self, patient_id: UUID, limit: int = 50, offset: int = 0
     ) -> list[Appointment] | None:
@@ -278,6 +287,7 @@ class AppointmentService:
             self._logger.error(f"Error listing appointments for patient: {str(e)}")
             return None
 
+    @trace_db_operation("appointment.list_appointments_for_doctor")
     async def list_appointments_for_doctor(
         self, doctor_id: UUID, limit: int = 50, offset: int = 0
     ) -> list[Appointment] | None:
@@ -313,6 +323,7 @@ class AppointmentService:
             self._logger.error(f"Error listing appointments for doctor: {str(e)}")
             return None
 
+    @trace_db_operation("appointment.update_appointment_status")
     async def update_appointment_status(
         self, appointment_id: UUID, new_status: AppointmentStatus
     ) -> bool:
@@ -352,6 +363,7 @@ class AppointmentService:
             self._logger.error(f"Error updating appointment status: {str(e)}")
             raise
 
+    @trace_db_operation("appointment.reschedule_appointment")
     async def reschedule_appointment(
         self,
         appointment_id: UUID,
@@ -410,6 +422,7 @@ class AppointmentService:
             self._logger.error(f"Error rescheduling appointment: {str(e)}")
             raise
 
+    @trace_db_operation("appointment.add_doctor_notes")
     async def add_doctor_notes(self, appointment_id: UUID, notes: str) -> bool:
         """
         Add doctor notes to an appointment after consultation.
@@ -447,6 +460,7 @@ class AppointmentService:
             self._logger.error(f"Error adding doctor notes: {str(e)}")
             raise
 
+    @trace_db_operation("appointment.get_appointments_by_status")
     async def get_appointments_by_status(
         self, status: AppointmentStatus, limit: int = 50, offset: int = 0
     ) -> list[Appointment] | None:

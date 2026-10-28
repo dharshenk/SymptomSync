@@ -73,3 +73,42 @@ def test_sdk_disabled_overrides_configured_collector(
 
     for component in tracing_components:
         component.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_database_span_describes_service_operation(monkeypatch):
+    from contextlib import contextmanager
+    from unittest.mock import MagicMock
+    from uuid import uuid4
+
+    from opentelemetry.sdk.trace.export import SimpleSpanProcessor
+    from opentelemetry.sdk.trace.export.in_memory_span_exporter import (
+        InMemorySpanExporter,
+    )
+
+    from src.api.clients.postgres_sql_client import PostgresSQLClient
+    from src.api.services.patient_intake_service import PatientIntakeService
+
+    exporter = InMemorySpanExporter()
+    provider = telemetry.TracerProvider()
+    provider.add_span_processor(SimpleSpanProcessor(exporter))
+    monkeypatch.setattr(telemetry, "tracer", provider.get_tracer(__name__))
+    client = PostgresSQLClient.__new__(PostgresSQLClient)
+    client.config = MagicMock(database="test_db")
+    connection = MagicMock()
+    connection.cursor.return_value.__enter__.return_value.fetchone.return_value = None
+
+    @contextmanager
+    def get_connection():
+        yield connection
+
+    client.get_connection = get_connection
+    await PatientIntakeService(client).get_intake_state(uuid4())
+
+    spans = exporter.get_finished_spans()
+    (db_span,) = spans
+    assert db_span.name == "db.patient_intake.get_intake_state"
+    assert db_span.parent is None
+    assert telemetry.db_operation_context.get() is None
+    assert db_span.attributes["db.operation.name"] == "SELECT"
+    provider.shutdown()

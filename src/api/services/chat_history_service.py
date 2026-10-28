@@ -1,3 +1,4 @@
+from src.api.telemetry import trace_db_operation
 import json
 from typing import Any
 from src.api.clients.postgres_sql_client import PostgresSQLClient
@@ -10,6 +11,7 @@ class ChatHistoryService:
     def __init__(self, postgres_client: PostgresSQLClient):
         self._postgres_client = postgres_client
 
+    @trace_db_operation("chat_history.create_session")
     async def create_session(self, session_id: UUID, patient_id: UUID) -> ChatSession:
         chat_session = ChatSession(id=session_id, patient_id=patient_id)
         insert_query = """
@@ -31,6 +33,7 @@ class ChatHistoryService:
         self._postgres_client.execute_command(query=insert_query, params=params)
         return chat_session
 
+    @trace_db_operation("chat_history.get_session")
     async def get_session(self, session_id: UUID) -> ChatSession | None:
         select_query = """
             SELECT
@@ -68,6 +71,7 @@ class ChatHistoryService:
         )
         return chat_session
 
+    @trace_db_operation("chat_history.add_message")
     async def add_message(self, chat_message: ChatMessage) -> None:
         insert_query = """
             INSERT INTO chat_messages (
@@ -96,6 +100,7 @@ class ChatHistoryService:
         self._postgres_client.execute_command(query=insert_query, params=params)
         return
 
+    @trace_db_operation("chat_history.get_session_messages")
     async def get_session_messages(self, session_id: UUID) -> list[ChatMessage] | None:
         select_query = """
             SELECT
@@ -129,6 +134,7 @@ class ChatHistoryService:
         ]
         return messages
 
+    @trace_db_operation("chat_history.get_agent_items")
     async def get_agent_items(self, session_id: UUID) -> list[dict[str, Any]]:
         select_query = """
             SELECT item::text AS item
@@ -143,6 +149,7 @@ class ChatHistoryService:
         )
         return [json.loads(row["item"]) for row in rows or []]
 
+    @trace_db_operation("chat_history.add_agent_items")
     async def add_agent_items(
         self, session_id: UUID, items: list[dict[str, Any]]
     ) -> None:

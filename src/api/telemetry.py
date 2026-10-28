@@ -1,6 +1,7 @@
 import functools
 import inspect
 import os
+from contextvars import ContextVar
 from typing import Any
 from collections.abc import Callable
 
@@ -14,6 +15,9 @@ from opentelemetry.sdk.trace.export import BatchSpanProcessor
 from opentelemetry.trace import Status, StatusCode
 
 tracer = trace.get_tracer("symptom.sync.tracer")
+db_operation_context: ContextVar[str | None] = ContextVar(
+    "db_operation_context", default=None
+)
 
 
 def setup_tracing(app: FastAPI) -> None:
@@ -37,7 +41,9 @@ def setup_tracing(app: FastAPI) -> None:
     FastAPIInstrumentor.instrument_app(app)
 
 
-def traced(name: str, attrs: Callable[..., dict[str, Any]] | None = None):
+def traced(
+    name: str | Callable[..., str], attrs: Callable[..., dict[str, Any]] | None = None
+):
     """
     Wrap a sync or async function in a span called `name`.
 
@@ -50,7 +56,9 @@ def traced(name: str, attrs: Callable[..., dict[str, Any]] | None = None):
 
             @functools.wraps(func)
             async def wrapper(*args, **kwargs):
-                with tracer.start_as_current_span(name) as span:
+                with tracer.start_as_current_span(
+                    name(*args, **kwargs) if callable(name) else name
+                ) as span:
                     if attrs:
                         span.set_attributes(attrs(*args, **kwargs))
                     return await func(*args, **kwargs)
@@ -59,10 +67,29 @@ def traced(name: str, attrs: Callable[..., dict[str, Any]] | None = None):
 
             @functools.wraps(func)
             def wrapper(*args, **kwargs):
-                with tracer.start_as_current_span(name) as span:
+                with tracer.start_as_current_span(
+                    name(*args, **kwargs) if callable(name) else name
+                ) as span:
                     if attrs:
                         span.set_attributes(attrs(*args, **kwargs))
                     return func(*args, **kwargs)
+
+        return wrapper
+
+    return decorator
+
+
+def trace_db_operation(name: str):
+    """Supply a descriptive name to database spans without creating a service span."""
+
+    def decorator(func):
+        @functools.wraps(func)
+        async def wrapper(*args, **kwargs):
+            token = db_operation_context.set(name)
+            try:
+                return await func(*args, **kwargs)
+            finally:
+                db_operation_context.reset(token)
 
         return wrapper
 

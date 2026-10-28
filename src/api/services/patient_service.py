@@ -1,3 +1,5 @@
+from src.api.telemetry import trace_db_operation
+
 # api/services/patient_service.py
 from src.api.clients.postgres_sql_client import PostgresSQLClient
 from src.api.models.patient_model import Patient
@@ -13,6 +15,7 @@ class PatientService:
         self._postgres_client = postgres_client
         self._logger = logging.getLogger(__name__)
 
+    @trace_db_operation("patient.create_patient")
     async def create_patient(self, patient: Patient) -> Patient:
         """Insert a new patient record.
 
@@ -57,6 +60,7 @@ class PatientService:
             self._logger.error(f"Error creating patient: {str(e)}")
             raise
 
+    @trace_db_operation("patient.get_patient")
     async def get_patient(self, patient_id: UUID) -> Patient | None:
         """Fetch a patient by internal UUID."""
         select_query = "SELECT * FROM patients WHERE id = %(id)s;"
@@ -69,6 +73,7 @@ class PatientService:
 
         return Patient(**rows[0])
 
+    @trace_db_operation("patient.get_patient_by_patient_ph_no")
     async def get_patient_by_patient_ph_no(self, patient_ph_no: str) -> Patient | None:
         """Fetch a patient by phone number using the patient_ph_no field."""
         select_query = "SELECT * FROM patients WHERE patient_ph_no = %(patient_ph_no)s;"
@@ -81,6 +86,7 @@ class PatientService:
 
         return Patient(**rows[0])
 
+    @trace_db_operation("patient.update_patient")
     async def update_patient(self, patient_id: UUID, updates: dict) -> bool:
         """Update a patient record by UUID.
 
@@ -111,6 +117,7 @@ class PatientService:
             self._logger.error(f"Error updating patient: {str(e)}")
             raise
 
+    @trace_db_operation("patient.delete_patient")
     async def delete_patient(self, patient_id: UUID) -> bool:
         """Hard-delete a patient record.
 

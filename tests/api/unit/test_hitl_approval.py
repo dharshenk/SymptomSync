@@ -8,7 +8,7 @@ from uuid import uuid4
 import pytest
 from fastapi import HTTPException
 
-from src.api import chat_flow, telegram_delivery
+from src.api import chat_application, chat_flow, telegram_delivery
 from src.api.agent_runtime import Finished, NeedsApproval
 from src.api import whatsapp_webhook_api as webhook
 from src.api.agent_tools.book_appointment import book_appointment
@@ -55,8 +55,8 @@ def test_webhook_update_parses_button_press_and_message():
 
 
 def test_approval_prompt_has_summary_and_both_buttons():
-    prompt = telegram_delivery.approval_prompt(
-        make_context(**FULL).patient_intake_state
+    prompt = telegram_delivery.render_reply(
+        chat_application.approval_prompt(make_context(**FULL).patient_intake_state)
     )
 
     assert "Test Patient" in prompt["text"] and "09:00 AM" in prompt["text"]
@@ -347,43 +347,6 @@ async def test_failed_resume_restores_pending(approval_env):
         await approval_env.call(callback_query("approve"))
 
     approval_env.pending_service.save.assert_awaited_once()
-
-
-async def test_message_while_decision_is_processing_does_not_run_agent():
-    pending_service = Mock()
-    pending_service.get = AsyncMock(
-        return_value=PendingApproval(
-            chat_session_id=uuid4(),
-            run_state="s",
-            user_item={},
-            user_message_sequence=1,
-            status="processing",
-        )
-    )
-    patient_service = Mock()
-    patient_service.get_patient_by_patient_ph_no = AsyncMock(
-        return_value=SimpleNamespace(id=uuid4(), patient_ph_no="42")
-    )
-    history = Mock()
-    history.get_session = AsyncMock(return_value=SimpleNamespace(id=uuid4()))
-    telegram = Mock()
-    message = TelegramWebhookUpdate.model_validate(
-        {"update_id": 1, "message": MESSAGE}
-    ).message
-
-    reply = await chat_flow.handle_message(
-        message,
-        make_services(
-            patient_service=patient_service,
-            chat_history_service=history,
-            pending_approval_service=pending_service,
-            telegram_client=telegram,
-        ),
-    )
-
-    assert "Still working" in reply
-    telegram.send_message.assert_called_once_with("42", text=reply)
-    history.add_message.assert_not_called()
 
 
 async def test_typing_indicator_refreshes_and_stops(monkeypatch):

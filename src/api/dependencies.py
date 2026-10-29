@@ -6,6 +6,7 @@ from agents import Agent
 from fastapi import Depends, Request
 
 from src.api.agent_runtime import AgentRuntime
+from src.api.chat_application import ChatApplication
 from src.api.clients.postgres_sql_client import PostgresSQLClient
 from src.api.clients.telegram_client import TelegramClient, TelegramConfig
 from src.api.services.appointment_service import AppointmentService
@@ -25,6 +26,7 @@ class ChatServices:
     pending_approval_service: PendingApprovalService
     appointment_service: AppointmentService
     agent_runtime: AgentRuntime
+    chat_application: ChatApplication
     telegram_client: TelegramClient
 
 
@@ -45,12 +47,26 @@ def get_chat_services(
     agent: Annotated[Agent, Depends(get_agent)],
     telegram_client: Annotated[TelegramClient, Depends(get_telegram_client)],
 ) -> ChatServices:
+    patient_service = PatientService(postgres_client)
+    chat_history_service = ChatHistoryService(postgres_client)
+    patient_intake_service = PatientIntakeService(postgres_client)
+    pending_approval_service = PendingApprovalService(postgres_client)
+    appointment_service = AppointmentService(postgres_client)
+    agent_runtime = AgentRuntime(agent)
     return ChatServices(
-        patient_service=PatientService(postgres_client),
-        chat_history_service=ChatHistoryService(postgres_client),
-        patient_intake_service=PatientIntakeService(postgres_client),
-        pending_approval_service=PendingApprovalService(postgres_client),
-        appointment_service=AppointmentService(postgres_client),
-        agent_runtime=AgentRuntime(agent),
+        patient_service=patient_service,
+        chat_history_service=chat_history_service,
+        patient_intake_service=patient_intake_service,
+        pending_approval_service=pending_approval_service,
+        appointment_service=appointment_service,
+        agent_runtime=agent_runtime,
+        chat_application=ChatApplication(
+            patient_service,
+            chat_history_service,
+            patient_intake_service,
+            pending_approval_service,
+            appointment_service,
+            agent_runtime,
+        ),
         telegram_client=telegram_client,
     )

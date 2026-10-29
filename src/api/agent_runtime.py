@@ -1,7 +1,6 @@
 from dataclasses import dataclass
 from datetime import date
 import os
-import uuid
 
 from agents import Agent, RunContextWrapper, RunState, Runner, ToolApprovalItem
 from dotenv import load_dotenv
@@ -9,11 +8,6 @@ from jinja2 import Template
 
 from src.api.agent_tools import ToolContext
 from src.api.models.chat_model import Decision
-from src.api.models.chat_session_model import ChatMessage
-from src.api.models.patient_intake_model import PatientIntakeState
-from src.api.models.patient_model import Patient
-from src.api.services.appointment_service import AppointmentService
-from src.api.services.patient_intake_service import PatientIntakeService
 from src.api.telemetry import traced
 
 load_dotenv()
@@ -43,27 +37,6 @@ class NeedsApproval:
 
 
 RunOutcome = Finished | NeedsApproval
-
-
-def get_doctor_id() -> uuid.UUID:
-    doctor_id = os.getenv("DOCTOR_ID")
-    if not doctor_id:
-        raise RuntimeError("DOCTOR_ID is not set")
-    return uuid.UUID(doctor_id)
-
-
-def messages_to_agent_items(previous_messages: list["ChatMessage"]) -> list[dict]:
-    """Convert stored chat messages into plain role/content agent input items."""
-
-    sender_type_map = {"patient": "user", "bot": "assistant"}
-
-    return [
-        {
-            "role": sender_type_map.get(msg.sender_type.lower()),
-            "content": msg.message_content,
-        }
-        for msg in previous_messages
-    ]
 
 
 def format_messages_for_runner(
@@ -163,35 +136,3 @@ class AgentRuntime:
                 )
         result = await Runner.run(starting_agent=self._agent, input=run_state)
         return outcome_from_result(result)
-
-
-async def build_tool_context(
-    patient: Patient,
-    chat_session_id: uuid.UUID,
-    appointment_service: AppointmentService,
-    patient_intake_service: PatientIntakeService,
-) -> ToolContext:
-    latest_appointment = await appointment_service.get_appointment_by_patient_id(
-        patient.id
-    )
-
-    patient_intake_state = await patient_intake_service.get_intake_state(
-        chat_session_id
-    )
-    if not patient_intake_state:
-        patient_intake_state = await patient_intake_service.create_intake_state(
-            PatientIntakeState(chat_session_id=chat_session_id)
-        )
-
-    return ToolContext(
-        patient_id=patient.id,
-        chat_session_id=chat_session_id,
-        appointment_service=appointment_service,
-        patient_intake_service=patient_intake_service,
-        patient_intake_state=patient_intake_state,
-        doctor_id=get_doctor_id(),
-        appointment=latest_appointment,
-        appointment_date=(
-            latest_appointment.appointment_date if latest_appointment else date.today()
-        ),
-    )

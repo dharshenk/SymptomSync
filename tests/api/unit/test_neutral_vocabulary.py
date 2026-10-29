@@ -4,7 +4,7 @@ import uuid
 
 import pytest
 
-from src.api import agent_runtime
+from src.api import chat_application
 from src.api.models.chat_model import Choice, Decision, Reply
 
 
@@ -28,11 +28,11 @@ def test_doctor_id_comes_from_configuration(monkeypatch):
     doctor_id = "22222222-2222-2222-2222-222222222222"
     monkeypatch.setenv("DOCTOR_ID", doctor_id)
 
-    assert agent_runtime.get_doctor_id() == uuid.UUID(doctor_id)
+    assert chat_application.get_doctor_id() == uuid.UUID(doctor_id)
 
 
 def test_missing_doctor_id_fails_loudly(monkeypatch):
     monkeypatch.delenv("DOCTOR_ID", raising=False)
 
     with pytest.raises(RuntimeError, match="DOCTOR_ID"):
-        agent_runtime.get_doctor_id()
+        chat_application.get_doctor_id()

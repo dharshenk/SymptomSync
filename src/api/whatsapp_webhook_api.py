@@ -3,10 +3,11 @@ from dotenv import load_dotenv
 from fastapi import Depends, APIRouter, HTTPException
 import os
 
-from src.api.chat_flow import handle_approval, handle_message
+from src.api.chat_flow import handle_approval
 from src.api.clients.whatsapp_client import WhatsAppClient, WhatsAppConfig
 from src.api.dependencies import ChatServices, get_chat_services
 from src.api.models.telegram_model import TelegramWebhookUpdate
+from src.api.telegram_adapter import handle_message
 
 load_dotenv()
 

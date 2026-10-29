@@ -18,6 +18,7 @@ from src.api.services.patient_service import PatientService
 from src.api.services.doctor_service import DoctorService
 from src.api.services.chat_history_service import ChatHistoryService
 from src.api.services.appointment_service import AppointmentService
+from src.api.services.patient_intake_service import PatientIntakeService
 from src.api.services.pending_approval_service import PendingApprovalService
 from src.api.models.patient_model import Patient
 from src.api.models.doctor_model import Doctor
@@ -122,6 +123,29 @@ def setup_schema(db_client: PostgresSQLClient) -> Generator[None, None, None]:
             session_summary TEXT,
             appointment_requested BOOLEAN DEFAULT false,
             created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+        );
+        """
+    )
+
+    db_client.execute_command(
+        """
+        CREATE TABLE IF NOT EXISTS patient_intake_state (
+            id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+            chat_session_id UUID NOT NULL UNIQUE
+                REFERENCES chat_sessions(id) ON DELETE CASCADE,
+            name VARCHAR(200),
+            age INTEGER,
+            gender VARCHAR(20),
+            symptoms TEXT,
+            pre_existing_conditions TEXT,
+            medications TEXT,
+            preferred_date DATE,
+            preferred_start_time TIME,
+            current_step VARCHAR(100),
+            status VARCHAR(20) NOT NULL DEFAULT 'in_progress',
+            created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            completed_at TIMESTAMP WITH TIME ZONE
         );
         """
     )
@@ -415,6 +439,7 @@ def setup_schema(db_client: PostgresSQLClient) -> Generator[None, None, None]:
     for table in (
         "appointments",
         "pending_approvals",
+        "patient_intake_state",
         "chat_agent_items",
         "chat_messages",
         "chat_sessions",
@@ -458,6 +483,11 @@ def chat_history_service(db_client: PostgresSQLClient) -> ChatHistoryService:
 @pytest.fixture()
 def pending_approval_service(db_client: PostgresSQLClient) -> PendingApprovalService:
     return PendingApprovalService(db_client)
+
+
+@pytest.fixture()
+def patient_intake_service(db_client: PostgresSQLClient) -> PatientIntakeService:
+    return PatientIntakeService(db_client)
 
 
 @pytest.fixture()

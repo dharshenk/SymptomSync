@@ -5,7 +5,7 @@ from agents import Agent, ModelSettings
 from openai.types.shared import Reasoning
 import os
 
-from src.api.agent_runtime import get_doctor_id
+from src.api.chat_application import get_doctor_id
 from src.api.clients.postgres_sql_client import PostgresSQLClient, DatabaseConfig
 from src.api.whatsapp_webhook_api import router as WhatsappRouter
 from src.api.health_api import router as HealthRouter

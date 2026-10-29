@@ -3,13 +3,17 @@ import asyncio
 import logging
 
 from src.api.clients.telegram_client import TelegramAPIError, TelegramClient
-from src.api.models.patient_intake_model import PatientIntakeState
+from src.api.models.chat_model import Decision, Reply
 from src.api.models.telegram_model import CallbackQuery
 
 logger = logging.getLogger(__name__)
 
 APPROVE = "approve"
 CHANGES_NEEDED = "changes_needed"
+CALLBACK_FOR_DECISION = {
+    Decision.GO_AHEAD: APPROVE,
+    Decision.CHANGES_NEEDED: CHANGES_NEEDED,
+}
 
 
 @asynccontextmanager
@@ -41,47 +45,17 @@ async def typing_indicator(telegram_client: TelegramClient, chat_id: str):
         await stop()
 
 
-def approval_prompt(intake_state: PatientIntakeState) -> dict:
-    """Booking summary with Go Ahead / Changes needed buttons (Telegram format)."""
-    details = [
-        ("Name", intake_state.name),
-        ("Age", intake_state.age),
-        ("Gender", intake_state.gender),
-        ("Symptoms", intake_state.symptoms),
-        ("Pre-existing conditions", intake_state.pre_existing_conditions),
-        ("Medications", intake_state.medications),
-        (
-            "Date",
-            (
-                intake_state.preferred_date.strftime("%A, %B %d, %Y")
-                if intake_state.preferred_date
-                else None
-            ),
-        ),
-        (
-            "Start time",
-            (
-                intake_state.preferred_start_time.strftime("%I:%M %p")
-                if intake_state.preferred_start_time
-                else None
-            ),
-        ),
-    ]
-    lines = [f"{label}: {value}" for label, value in details if value is not None]
-    text = (
-        "Please review your appointment details:\n\n"
-        + "\n".join(lines)
-        + "\n\nShall I go ahead and book it?"
-    )
-    return {
-        "text": text,
-        "reply_markup": {
+def render_reply(reply: Reply) -> dict:
+    """A Reply as Telegram `send_message` arguments; choices become an inline keyboard."""
+    rendered: dict = {"text": reply.text}
+    if reply.choices:
+        rendered["reply_markup"] = {
             "inline_keyboard": [
-                [{"text": "Go Ahead", "callback_data": APPROVE}],
-                [{"text": "Changes needed", "callback_data": CHANGES_NEEDED}],
+                [{"text": c.label, "callback_data": CALLBACK_FOR_DECISION[c.decision]}]
+                for c in reply.choices
             ]
-        },
-    }
+        }
+    return rendered
 
 
 def deliver_reply(telegram_client: TelegramClient, chat_id: str, reply: str | dict):

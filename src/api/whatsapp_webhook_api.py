@@ -4,7 +4,9 @@ from fastapi import Depends, APIRouter, HTTPException
 import os
 
 from src.api.clients.whatsapp_client import WhatsAppClient, WhatsAppConfig
-from src.api.dependencies import ChatServices, get_chat_services
+from src.api.chat_application import ChatApplication
+from src.api.clients.telegram_client import TelegramClient
+from src.api.dependencies import get_chat_application, get_telegram_client
 from src.api.models.telegram_model import TelegramWebhookUpdate
 from src.api.telegram_adapter import handle_callback, handle_message
 
@@ -29,16 +31,19 @@ router = APIRouter()
 @router.post("/webhook")
 async def telegram_webhook(
     update: TelegramWebhookUpdate,
-    services: Annotated[ChatServices, Depends(get_chat_services)],
+    application: Annotated[ChatApplication, Depends(get_chat_application)],
+    telegram_client: Annotated[TelegramClient, Depends(get_telegram_client)],
 ):
     """Single Telegram entry point: a button press resumes a paused run, a message starts one."""
     if update.callback_query:
-        return await handle_callback(update.callback_query, services)
-    if update.message:
-        return await handle_message(update.message, services)
-    raise HTTPException(
-        status_code=422, detail="Expected a message or a callback_query"
-    )
+        await handle_callback(update.callback_query, application, telegram_client)
+    elif update.message:
+        await handle_message(update.message, application, telegram_client)
+    else:
+        raise HTTPException(
+            status_code=422, detail="Expected a message or a callback_query"
+        )
+    return {"ok": True}
 
 
 # @router.get("/webhook")

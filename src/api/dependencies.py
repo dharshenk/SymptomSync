@@ -1,4 +1,3 @@
-from dataclasses import dataclass
 from typing import Annotated
 import os
 
@@ -16,20 +15,6 @@ from src.api.services.patient_service import PatientService
 from src.api.services.pending_approval_service import PendingApprovalService
 
 
-@dataclass
-class ChatServices:
-    """Everything a chat flow needs, built once per request."""
-
-    patient_service: PatientService
-    chat_history_service: ChatHistoryService
-    patient_intake_service: PatientIntakeService
-    pending_approval_service: PendingApprovalService
-    appointment_service: AppointmentService
-    agent_runtime: AgentRuntime
-    chat_application: ChatApplication
-    telegram_client: TelegramClient
-
-
 def get_postgres_client(request: Request) -> PostgresSQLClient:
     return request.app.state.postgres_client
 
@@ -42,31 +27,15 @@ def get_telegram_client():
     return TelegramClient(TelegramConfig(bot_token=os.getenv("TELEGRAM_BOT_TOKEN")))
 
 
-def get_chat_services(
+def get_chat_application(
     postgres_client: Annotated[PostgresSQLClient, Depends(get_postgres_client)],
     agent: Annotated[Agent, Depends(get_agent)],
-    telegram_client: Annotated[TelegramClient, Depends(get_telegram_client)],
-) -> ChatServices:
-    patient_service = PatientService(postgres_client)
-    chat_history_service = ChatHistoryService(postgres_client)
-    patient_intake_service = PatientIntakeService(postgres_client)
-    pending_approval_service = PendingApprovalService(postgres_client)
-    appointment_service = AppointmentService(postgres_client)
-    agent_runtime = AgentRuntime(agent)
-    return ChatServices(
-        patient_service=patient_service,
-        chat_history_service=chat_history_service,
-        patient_intake_service=patient_intake_service,
-        pending_approval_service=pending_approval_service,
-        appointment_service=appointment_service,
-        agent_runtime=agent_runtime,
-        chat_application=ChatApplication(
-            patient_service,
-            chat_history_service,
-            patient_intake_service,
-            pending_approval_service,
-            appointment_service,
-            agent_runtime,
-        ),
-        telegram_client=telegram_client,
+) -> ChatApplication:
+    return ChatApplication(
+        PatientService(postgres_client),
+        ChatHistoryService(postgres_client),
+        PatientIntakeService(postgres_client),
+        PendingApprovalService(postgres_client),
+        AppointmentService(postgres_client),
+        AgentRuntime(agent),
     )

@@ -4,13 +4,13 @@
 
 **Blocked by:** 04
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] `ChatServices` is removed, and `ChatApplication` receives no Telegram client and no agent bundle
-- [ ] No `HTTPException` is raised below the transport layer
-- [ ] An unknown payload still returns 422
-- [ ] The webhook returns a small acknowledgement, and tests assert replies on the use-case result
-- [ ] The old flow and delivery modules are deleted, with no remaining references
-- [ ] The existing HITL tests are split along the application and adapter seams
-- [ ] An end-to-end `POST /webhook` smoke test passes for a message and a button press
-- [ ] The full test suite is green
+- [x] `ChatServices` is removed, and `ChatApplication` receives no Telegram client and no agent bundle
+- [x] No `HTTPException` is raised below the transport layer
+- [x] An unknown payload still returns 422
+- [x] The webhook returns a small acknowledgement, and tests assert replies on the use-case result
+- [x] The old flow and delivery modules are deleted, with no remaining references
+- [x] The existing HITL tests are split along the application and adapter seams
+- [x] An end-to-end `POST /webhook` smoke test passes for a message and a button press
+- [x] The full test suite is green

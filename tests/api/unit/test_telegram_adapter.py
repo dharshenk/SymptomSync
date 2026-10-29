@@ -1,5 +1,6 @@
 """Telegram adapter for Incoming Messages, against a fake Telegram client."""
 
+import asyncio
 from unittest.mock import Mock
 
 import pytest
@@ -85,12 +86,11 @@ async def test_typing_shows_during_the_run_and_the_reply_is_sent_afterwards():
     events: list = []
     app, telegram = FakeApplication(Reply(text="hello"), events), make_telegram(events)
 
-    body = await telegram_adapter.run_message(MESSAGE, app, telegram)
+    await telegram_adapter.handle_message(MESSAGE, app, telegram)
 
     assert events == ["typing", "run", "send"]
     assert app.received == [IncomingMessage(sender_id="42", text="hi")]
     telegram.send_message.assert_called_once_with("42", text="hello")
-    assert body == "hello"
 
 
 async def test_choices_are_sent_as_an_inline_keyboard():
@@ -103,7 +103,7 @@ async def test_choices_are_sent_as_an_inline_keyboard():
     )
     telegram = make_telegram([])
 
-    await telegram_adapter.run_message(MESSAGE, FakeApplication(reply, []), telegram)
+    await telegram_adapter.handle_message(MESSAGE, FakeApplication(reply, []), telegram)
 
     markup = telegram.send_message.call_args.kwargs["reply_markup"]
     buttons = [b for row in markup["inline_keyboard"] for b in row]
@@ -117,11 +117,9 @@ async def test_failed_send_is_logged_not_raised():
     telegram = make_telegram([])
     telegram.send_message.side_effect = TelegramAPIError("boom")
 
-    body = await telegram_adapter.run_message(
+    await telegram_adapter.handle_message(
         MESSAGE, FakeApplication(Reply(text="hello"), []), telegram
     )
-
-    assert body == "hello"
 
 
 @pytest.mark.parametrize(
@@ -143,7 +141,7 @@ async def test_press_removes_buttons_and_acks_before_the_run_then_replies():
     events: list = []
     app, telegram = FakeApplication(Reply(text="Booked"), events), make_telegram(events)
 
-    body = await telegram_adapter.run_callback(press("approve"), app, telegram)
+    await telegram_adapter.handle_callback(press("approve"), app, telegram)
 
     assert events.index("unbutton") < events.index("ack") < events.index("run")
     assert events[-1] == "send"
@@ -153,26 +151,24 @@ async def test_press_removes_buttons_and_acks_before_the_run_then_replies():
     telegram.remove_inline_keyboard.assert_called_once_with("42", 7)
     telegram.answer_callback_query.assert_called_once_with("cb-1")
     telegram.send_message.assert_called_once_with("42", text="Booked")
-    assert body == "Booked"
 
 
 async def test_unknown_callback_acks_and_resends_the_prompt_without_a_decision():
     events: list = []
     app, telegram = FakeApplication(Reply(text="Review"), events), make_telegram(events)
 
-    body = await telegram_adapter.run_callback(press("bogus"), app, telegram)
+    await telegram_adapter.handle_callback(press("bogus"), app, telegram)
 
     assert app.decisions == [] and app.prompted_for == ["42"]
     assert "ack" in events and "run" not in events
     telegram.remove_inline_keyboard.assert_not_called()
     telegram.send_message.assert_called_once_with("42", text="Review")
-    assert body == "Review"
 
 
 async def test_press_still_runs_when_the_message_is_unavailable():
     app, telegram = FakeApplication(Reply(text="ok"), []), make_telegram([])
 
-    await telegram_adapter.run_callback(
+    await telegram_adapter.handle_callback(
         press("approve", with_message=False), app, telegram
     )
 
@@ -185,6 +181,50 @@ async def test_failed_button_removal_or_ack_does_not_block_the_decision(failing)
     app, telegram = FakeApplication(Reply(text="Booked"), []), make_telegram([])
     getattr(telegram, failing).side_effect = TelegramAPIError("too old")
 
-    body = await telegram_adapter.run_callback(press("approve"), app, telegram)
+    await telegram_adapter.handle_callback(press("approve"), app, telegram)
 
-    assert len(app.decisions) == 1 and body == "Booked"
+    assert len(app.decisions) == 1
+
+
+def test_deliver_reply_swallows_telegram_errors():
+    telegram = Mock()
+    telegram.send_message.side_effect = TelegramAPIError("boom")
+
+    telegram_adapter.deliver_reply(telegram, "42", "hi")
+
+    telegram.send_message.assert_called_once_with("42", text="hi")
+
+
+async def test_typing_indicator_refreshes_and_stops(monkeypatch):
+    telegram = Mock()
+    sent = asyncio.Event()
+    calls = []
+    loop = asyncio.get_running_loop()
+
+    def send_action(chat_id):
+        calls.append(chat_id)
+        if len(calls) == 2:
+            loop.call_soon_threadsafe(sent.set)
+
+    telegram.send_typing_action.side_effect = send_action
+    original_wait_for = asyncio.wait_for
+
+    async def fast_wait(awaitable, timeout):
+        return await original_wait_for(awaitable, timeout=0.01)
+
+    monkeypatch.setattr(asyncio, "wait_for", fast_wait)
+    async with telegram_adapter.typing_indicator(telegram, "42"):
+        await original_wait_for(sent.wait(), timeout=1)
+    assert calls == ["42", "42"]
+    await asyncio.sleep(0.03)
+    assert calls == ["42", "42"]
+
+
+async def test_typing_indicator_failure_does_not_fail_run():
+    telegram = Mock()
+    telegram.send_typing_action.side_effect = TelegramAPIError("unavailable")
+
+    async with telegram_adapter.typing_indicator(telegram, "42"):
+        pass
+
+    telegram.send_typing_action.assert_called_once_with("42")

@@ -5,6 +5,7 @@ from agents import Agent, ModelSettings
 from openai.types.shared import Reasoning
 import os
 
+from src.api.agent_runtime import get_doctor_id
 from src.api.clients.postgres_sql_client import PostgresSQLClient, DatabaseConfig
 from src.api.whatsapp_webhook_api import router as WhatsappRouter
 from src.api.health_api import router as HealthRouter
@@ -35,6 +36,7 @@ def get_database_config() -> DatabaseConfig:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    get_doctor_id()  # fail at startup, not on the first chat message
     database_config = get_database_config()
     app.state.postgres_client = PostgresSQLClient(database_config)
     app.state.agent = Agent(

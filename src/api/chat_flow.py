@@ -2,7 +2,6 @@ from collections.abc import Awaitable, Callable
 from datetime import date
 
 from agents import RunContextWrapper, RunState, ToolApprovalItem
-from fastapi import HTTPException
 
 from src.api.agent_runtime import (
     build_tool_context,
@@ -10,9 +9,9 @@ from src.api.agent_runtime import (
     get_system_prompt,
     messages_to_agent_items,
     run_agent,
-    session_id_for,
 )
 from src.api.agent_tools import ToolContext
+from src.api.conversation import resolve_conversation
 from src.api.dependencies import ChatServices
 from src.api.models.chat_session_model import ChatMessage, SenderType
 from src.api.models.patient_model import Patient
@@ -96,20 +95,13 @@ async def finalize_run(
 async def handle_message(message: Message, services: ChatServices):
     """Run the agent on a patient's chat message."""
     patient_ph_no = str(message.from_user.id)
-    session_id = session_id_for(patient_ph_no)
     today_str = date.today().strftime("%A, %B %d, %Y")
     patient_message = f"[Current date: {today_str}]\n{message.text}"
 
-    patient = await services.patient_service.get_patient_by_patient_ph_no(patient_ph_no)
-    if not patient:
-        patient = await services.patient_service.create_patient(
-            Patient(patient_ph_no=patient_ph_no)
-        )
-
     chat_history_service = services.chat_history_service
-    chat_session = await chat_history_service.get_session(session_id)
-    if not chat_session:
-        chat_session = await chat_history_service.create_session(session_id, patient.id)
+    patient, chat_session = await resolve_conversation(
+        patient_ph_no, services.patient_service, chat_history_service
+    )
 
     set_span_attributes(
         {"patient.id": str(patient.id), "chat_session.id": str(chat_session.id)}
@@ -183,8 +175,15 @@ async def handle_approval(callback_query: CallbackQuery, services: ChatServices)
     # to remove), so the button's spinner stays until then. That must happen
     # before the agent run, which can outlast the query's validity.
     patient_ph_no = str(callback_query.from_user.id)
-    session_id = session_id_for(patient_ph_no)
     telegram_client = services.telegram_client
+
+    patient, chat_session = await resolve_conversation(
+        patient_ph_no, services.patient_service, services.chat_history_service
+    )
+    session_id = chat_session.id
+    set_span_attributes(
+        {"patient.id": str(patient.id), "chat_session.id": str(session_id)}
+    )
 
     decision = callback_query.data
     if decision not in (APPROVE, CHANGES_NEEDED):
@@ -208,9 +207,7 @@ async def handle_approval(callback_query: CallbackQuery, services: ChatServices)
     acknowledge_button_press(telegram_client, callback_query.id)
 
     try:
-        return await resume_approval(
-            pending, decision, patient_ph_no, session_id, services
-        )
+        return await resume_approval(pending, decision, patient, session_id, services)
     except Exception:
         # The decision wasn't applied: restore the prompt so it can be retried.
         await services.pending_approval_service.save(pending)
@@ -220,18 +217,11 @@ async def handle_approval(callback_query: CallbackQuery, services: ChatServices)
 async def resume_approval(
     pending: PendingApproval,
     decision: str,
-    patient_ph_no: str,
+    patient: Patient,
     session_id,
     services: ChatServices,
 ):
-    patient = await services.patient_service.get_patient_by_patient_ph_no(patient_ph_no)
-    if not patient:
-        raise HTTPException(status_code=404, detail="Patient not found")
-
-    set_span_attributes(
-        {"patient.id": str(patient.id), "chat_session.id": str(session_id)}
-    )
-
+    patient_ph_no = patient.patient_ph_no
     # The context isn't saved with the run state (services, UUIDs), so rebuild it.
     tool_context = await build_tool_context(
         patient,

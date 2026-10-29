@@ -152,7 +152,13 @@ def approval_env(monkeypatch):
     )
     patient_service = Mock()
     patient_service.get_patient_by_patient_ph_no = AsyncMock(
-        return_value=SimpleNamespace(id=uuid4())
+        return_value=SimpleNamespace(id=uuid4(), patient_ph_no="42")
+    )
+    patient_service.create_patient = AsyncMock(side_effect=lambda patient: patient)
+    history_service = Mock()
+    history_service.get_session = AsyncMock(return_value=SimpleNamespace(id=uuid4()))
+    history_service.create_session = AsyncMock(
+        side_effect=lambda session_id, patient_id: SimpleNamespace(id=session_id)
     )
     intake_service = Mock()
     intake_service.get_intake_state = AsyncMock(
@@ -166,6 +172,7 @@ def approval_env(monkeypatch):
             update,
             make_services(
                 patient_service=patient_service,
+                chat_history_service=history_service,
                 patient_intake_service=intake_service,
                 pending_approval_service=pending_service,
                 telegram_client=telegram,
@@ -177,6 +184,7 @@ def approval_env(monkeypatch):
         state=state,
         interruption=interruption,
         pending_service=pending_service,
+        patient_service=patient_service,
         telegram=telegram,
     )
 
@@ -206,6 +214,19 @@ async def test_nothing_pending_does_not_run_agent(approval_env):
 
     reply = await approval_env.call(callback_query("approve"))
 
+    assert "nothing waiting" in reply
+    chat_flow.run_agent.assert_not_called()
+
+
+async def test_decision_from_unknown_sender_creates_patient_and_finds_nothing(
+    approval_env,
+):
+    approval_env.patient_service.get_patient_by_patient_ph_no.return_value = None
+    approval_env.pending_service.claim.return_value = None
+
+    reply = await approval_env.call(callback_query("approve"))
+
+    approval_env.patient_service.create_patient.assert_awaited_once()
     assert "nothing waiting" in reply
     chat_flow.run_agent.assert_not_called()
 
@@ -353,7 +374,7 @@ async def test_message_while_decision_is_processing_does_not_run_agent():
     )
     patient_service = Mock()
     patient_service.get_patient_by_patient_ph_no = AsyncMock(
-        return_value=SimpleNamespace(id=uuid4())
+        return_value=SimpleNamespace(id=uuid4(), patient_ph_no="42")
     )
     history = Mock()
     history.get_session = AsyncMock(return_value=SimpleNamespace(id=uuid4()))

@@ -18,7 +18,12 @@ load_dotenv()
 
 SYSTEM_PROMPT_PATH = os.getenv("SYSTEM_PROMPT_PATH")
 
-DOCTOR_ID = uuid.UUID("11111111-1111-1111-1111-111111111111")
+
+def get_doctor_id() -> uuid.UUID:
+    doctor_id = os.getenv("DOCTOR_ID")
+    if not doctor_id:
+        raise RuntimeError("DOCTOR_ID is not set")
+    return uuid.UUID(doctor_id)
 
 
 def messages_to_agent_items(previous_messages: list["ChatMessage"]) -> list[dict]:
@@ -72,10 +77,6 @@ def get_system_prompt():
     return system_prompt
 
 
-def session_id_for(sender_id: str) -> uuid.UUID:
-    return uuid.uuid5(uuid.NAMESPACE_DNS, sender_id)
-
-
 @traced("agent.run")
 async def run_agent(
     agent: Agent, agent_input: list[dict] | RunState, context: ToolContext | None = None
@@ -111,7 +112,7 @@ async def build_tool_context(
         appointment_service=appointment_service,
         patient_intake_service=patient_intake_service,
         patient_intake_state=patient_intake_state,
-        doctor_id=DOCTOR_ID,
+        doctor_id=get_doctor_id(),
         appointment=latest_appointment,
         appointment_date=(
             latest_appointment.appointment_date if latest_appointment else date.today()

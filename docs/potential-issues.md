@@ -4,7 +4,7 @@ Known risks that are not fixed yet. Each entry says where it lives, when it trig
 
 ## 1. Concurrent first messages can race on intake-state creation
 
-- **Where:** `src/api/whatsapp_webhook_api.py` (get-then-create of `patient_intake_state`); the same pattern is used for patients and chat sessions.
+- **Where:** `src/api/chat_flow.py` and `src/api/agent_runtime.py` (get-then-create of `patient_intake_state`); the same pattern is used for patients and chat sessions.
 - **Trigger:** two webhook calls for the same brand-new session (for example a Telegram retry or two quick messages) both see no row, and both call `create_intake_state`.
 - **Effect:** the second `INSERT` fails on the unique constraint, so that request returns an error.
 - **Possible fix:** insert with `ON CONFLICT (chat_session_id) DO NOTHING`, then select the row (a `get_or_create` on the service), and do the same for patients and chat sessions.

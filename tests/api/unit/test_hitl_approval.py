@@ -8,14 +8,21 @@ from uuid import uuid4
 import pytest
 from fastapi import HTTPException
 
+from src.api import chat_flow, telegram_delivery
 from src.api import whatsapp_webhook_api as webhook
 from src.api.agent_tools.book_appointment import book_appointment
+from src.api.dependencies import ChatServices
 from src.api.clients.telegram_client import TelegramAPIError
 from src.api.models.pending_approval_model import PendingApproval
 from src.api.models.telegram_model import TelegramWebhookUpdate
 from tests.api.unit.test_agent_tools_context import FULL, make_context
 
 USER = {"id": 42, "is_bot": False, "first_name": "Pat", "language_code": "en"}
+
+
+def make_services(**overrides) -> ChatServices:
+    fields = {name: Mock() for name in ChatServices.__dataclass_fields__}
+    return ChatServices(**{**fields, **overrides})
 
 
 def callback_query(data):
@@ -46,7 +53,9 @@ def test_webhook_update_parses_button_press_and_message():
 
 
 def test_approval_prompt_has_summary_and_both_buttons():
-    prompt = webhook.approval_prompt(make_context(**FULL).patient_intake_state)
+    prompt = telegram_delivery.approval_prompt(
+        make_context(**FULL).patient_intake_state
+    )
 
     assert "Test Patient" in prompt["text"] and "09:00 AM" in prompt["text"]
     buttons = [b for row in prompt["reply_markup"]["inline_keyboard"] for b in row]
@@ -63,14 +72,16 @@ async def test_finalize_run_saves_state_when_paused():
     history_service.add_message = AsyncMock()
     history_service.add_agent_items = AsyncMock()
 
-    reply = await webhook.finalize_run(
+    reply = await chat_flow.finalize_run(
         result,
         context,
         {"role": "user", "content": "x"},
         5,
-        history_service,
-        pending_service,
-        telegram,
+        make_services(
+            chat_history_service=history_service,
+            pending_approval_service=pending_service,
+            telegram_client=telegram,
+        ),
         "42",
     )
 
@@ -92,14 +103,16 @@ async def test_finalize_run_persists_and_clears_pending_when_done():
     history_service.add_message = AsyncMock()
     history_service.add_agent_items = AsyncMock()
 
-    reply = await webhook.finalize_run(
+    reply = await chat_flow.finalize_run(
         result,
         context,
         {"role": "user"},
         5,
-        history_service,
-        pending_service,
-        telegram,
+        make_services(
+            chat_history_service=history_service,
+            pending_approval_service=pending_service,
+            telegram_client=telegram,
+        ),
         "42",
     )
 
@@ -118,12 +131,14 @@ def approval_env(monkeypatch):
     interruption = object()
     state = Mock()
     state.get_interruptions.return_value = [interruption]
-    monkeypatch.setattr(webhook.RunState, "from_string", AsyncMock(return_value=state))
-    monkeypatch.setattr(webhook, "run_agent", AsyncMock(return_value="result"))
     monkeypatch.setattr(
-        webhook, "build_tool_context", AsyncMock(return_value=make_context(**FULL))
+        chat_flow.RunState, "from_string", AsyncMock(return_value=state)
     )
-    monkeypatch.setattr(webhook, "finalize_run", AsyncMock(return_value="final"))
+    monkeypatch.setattr(chat_flow, "run_agent", AsyncMock(return_value="result"))
+    monkeypatch.setattr(
+        chat_flow, "build_tool_context", AsyncMock(return_value=make_context(**FULL))
+    )
+    monkeypatch.setattr(chat_flow, "finalize_run", AsyncMock(return_value="final"))
     pending_service = Mock()
     pending_service.save = AsyncMock()
     pending_service.get = AsyncMock(return_value="pending")
@@ -147,15 +162,14 @@ def approval_env(monkeypatch):
     telegram = Mock()
 
     async def call(update):
-        return await webhook.handle_approval(
+        return await chat_flow.handle_approval(
             update,
-            patient_service,
-            Mock(),
-            intake_service,
-            pending_service,
-            Mock(),
-            telegram,
-            Mock(),
+            make_services(
+                patient_service=patient_service,
+                patient_intake_service=intake_service,
+                pending_approval_service=pending_service,
+                telegram_client=telegram,
+            ),
         )
 
     return SimpleNamespace(
@@ -172,7 +186,7 @@ async def test_go_ahead_approves_and_resumes(approval_env):
 
     approval_env.state.approve.assert_called_once_with(approval_env.interruption)
     approval_env.state.reject.assert_not_called()
-    webhook.run_agent.assert_awaited_once()
+    chat_flow.run_agent.assert_awaited_once()
     assert reply == "final"
 
 
@@ -181,10 +195,10 @@ async def test_changes_needed_rejects_with_message_and_resumes(approval_env):
 
     approval_env.state.reject.assert_called_once_with(
         approval_env.interruption,
-        rejection_message=webhook.CHANGES_REJECTION_MESSAGE,
+        rejection_message=chat_flow.CHANGES_REJECTION_MESSAGE,
     )
     approval_env.state.approve.assert_not_called()
-    webhook.run_agent.assert_awaited_once()
+    chat_flow.run_agent.assert_awaited_once()
 
 
 async def test_nothing_pending_does_not_run_agent(approval_env):
@@ -193,7 +207,7 @@ async def test_nothing_pending_does_not_run_agent(approval_env):
     reply = await approval_env.call(callback_query("approve"))
 
     assert "nothing waiting" in reply
-    webhook.run_agent.assert_not_called()
+    chat_flow.run_agent.assert_not_called()
 
 
 async def test_unknown_decision_reprompts_without_running(approval_env):
@@ -201,7 +215,7 @@ async def test_unknown_decision_reprompts_without_running(approval_env):
 
     assert "reply_markup" in reply
     approval_env.telegram.send_message.assert_called_once_with("42", **reply)
-    webhook.run_agent.assert_not_called()
+    chat_flow.run_agent.assert_not_called()
 
 
 MESSAGE = {
@@ -220,7 +234,7 @@ async def dispatch(monkeypatch, payload):
     monkeypatch.setattr(webhook, "handle_message", handle_message)
     reply = await webhook.telegram_webhook(
         TelegramWebhookUpdate.model_validate({"update_id": 1, **payload}),
-        *[Mock() for _ in range(7)],
+        Mock(),
     )
     return reply, handle_approval, handle_message
 
@@ -255,7 +269,7 @@ def test_deliver_reply_swallows_telegram_errors():
     telegram = Mock()
     telegram.send_message.side_effect = TelegramAPIError("boom")
 
-    webhook.deliver_reply(telegram, "42", "hi")
+    telegram_delivery.deliver_reply(telegram, "42", "hi")
 
     telegram.send_message.assert_called_once_with("42", text="hi")
 
@@ -270,7 +284,7 @@ async def test_button_press_is_answered_after_buttons_removed_before_agent_runs(
     approval_env.telegram.answer_callback_query.side_effect = lambda *a: order.append(
         "answer"
     )
-    webhook.run_agent.side_effect = lambda *a, **k: order.append("run") or "result"
+    chat_flow.run_agent.side_effect = lambda *a, **k: order.append("run") or "result"
 
     update = callback_query("approve")
     update.message = SimpleNamespace(message_id=7, chat=SimpleNamespace(id=42))
@@ -318,7 +332,7 @@ async def test_failed_button_removal_does_not_block_the_decision(approval_env):
 
 
 async def test_failed_resume_restores_pending(approval_env):
-    webhook.run_agent.side_effect = RuntimeError("boom")
+    chat_flow.run_agent.side_effect = RuntimeError("boom")
 
     with pytest.raises(RuntimeError):
         await approval_env.call(callback_query("approve"))
@@ -348,15 +362,14 @@ async def test_message_while_decision_is_processing_does_not_run_agent():
         {"update_id": 1, "message": MESSAGE}
     ).message
 
-    reply = await webhook.handle_message(
+    reply = await chat_flow.handle_message(
         message,
-        patient_service,
-        history,
-        Mock(),
-        pending_service,
-        Mock(),
-        telegram,
-        Mock(),
+        make_services(
+            patient_service=patient_service,
+            chat_history_service=history,
+            pending_approval_service=pending_service,
+            telegram_client=telegram,
+        ),
     )
 
     assert "Still working" in reply
@@ -381,8 +394,8 @@ async def test_typing_indicator_refreshes_and_stops(monkeypatch):
     async def fast_wait(awaitable, timeout):
         return await original_wait_for(awaitable, timeout=0.01)
 
-    monkeypatch.setattr(webhook.asyncio, "wait_for", fast_wait)
-    async with webhook.typing_indicator(telegram, "42"):
+    monkeypatch.setattr(asyncio, "wait_for", fast_wait)
+    async with telegram_delivery.typing_indicator(telegram, "42"):
         await original_wait_for(sent.wait(), timeout=1)
     assert calls == ["42", "42"]
     await asyncio.sleep(0.03)
@@ -393,7 +406,7 @@ async def test_typing_indicator_failure_does_not_fail_run():
     telegram = Mock()
     telegram.send_typing_action.side_effect = TelegramAPIError("unavailable")
 
-    async with webhook.typing_indicator(telegram, "42"):
+    async with telegram_delivery.typing_indicator(telegram, "42"):
         pass
 
     telegram.send_typing_action.assert_called_once_with("42")

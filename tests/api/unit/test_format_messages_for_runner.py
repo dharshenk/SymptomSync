@@ -1,7 +1,7 @@
 from uuid import uuid4
 
 from src.api.models.chat_session_model import ChatMessage, SenderType
-from src.api.whatsapp_webhook_api import (
+from src.api.agent_runtime import (
     format_messages_for_runner,
     messages_to_agent_items,
 )

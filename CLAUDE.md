@@ -42,3 +42,17 @@ One webhook turns a chat message into an LLM agent run with DB-backed tools.
 **Tracing** (`src/api/telemetry.py`): OpenTelemetry with the `@traced(...)` decorator, used on `agent.run` and on every tool (`traced_tool`) with patient/session attributes. Set `OTEL_SDK_DISABLED=true` to turn tracing off.
 
 **Other**: `clients/redis_client.py` is not wired into the app. PDF reports are generated with ReportLab by `patient_report_service.py` and written to `PATIENT_REPORT_OUTPUT_PATH`. WhatsApp client unit tests live in `src/api/clients/tests/`, while the rest of the tests live in `tests/api/`.
+
+## Agent skills
+
+### Issue tracker
+
+Issues and specs are local markdown files under `.scratch/<feature-slug>/`. See `docs/agents/issue-tracker.md`.
+
+### Triage labels
+
+Default five-role vocabulary (`needs-triage`, `needs-info`, `ready-for-agent`, `ready-for-human`, `wontfix`), recorded as a `Status:` line. See `docs/agents/triage-labels.md`.
+
+### Domain docs
+
+Single-context: root `GLOSSARY.md` + `docs/adr/`. See `docs/agents/domain.md`.

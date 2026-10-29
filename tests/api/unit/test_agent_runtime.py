@@ -88,7 +88,7 @@ def test_system_prompt_has_the_date_and_no_time_of_day():
 
 def test_v2_prompt_uses_the_rendered_date():
     text = open("src/api/prompts/patient_intake_prompt_v2.txt").read()
-    assert "{{current_date}}" in text and "[Current date" not in text
+    assert "{{current_date}}" in text and "Every patient message begins" not in text
 
 
 async def test_fake_runtime_returns_scripted_outcomes_and_records_calls():

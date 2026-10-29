@@ -5,6 +5,7 @@ import os
 from agents import Agent
 from fastapi import Depends, Request
 
+from src.api.agent_runtime import AgentRuntime
 from src.api.clients.postgres_sql_client import PostgresSQLClient
 from src.api.clients.telegram_client import TelegramClient, TelegramConfig
 from src.api.services.appointment_service import AppointmentService
@@ -23,7 +24,7 @@ class ChatServices:
     patient_intake_service: PatientIntakeService
     pending_approval_service: PendingApprovalService
     appointment_service: AppointmentService
-    agent: Agent
+    agent_runtime: AgentRuntime
     telegram_client: TelegramClient
 
 
@@ -50,6 +51,6 @@ def get_chat_services(
         patient_intake_service=PatientIntakeService(postgres_client),
         pending_approval_service=PendingApprovalService(postgres_client),
         appointment_service=AppointmentService(postgres_client),
-        agent=agent,
+        agent_runtime=AgentRuntime(agent),
         telegram_client=telegram_client,
     )

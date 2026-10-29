@@ -1,18 +1,15 @@
 from collections.abc import Awaitable, Callable
-from datetime import date
-
-from agents import RunContextWrapper, RunState, ToolApprovalItem
 
 from src.api.agent_runtime import (
+    NeedsApproval,
+    RunOutcome,
     build_tool_context,
-    format_messages_for_runner,
-    get_system_prompt,
     messages_to_agent_items,
-    run_agent,
 )
 from src.api.agent_tools import ToolContext
 from src.api.conversation import resolve_conversation
 from src.api.dependencies import ChatServices
+from src.api.models.chat_model import Decision
 from src.api.models.chat_session_model import ChatMessage, SenderType
 from src.api.models.patient_model import Patient
 from src.api.models.pending_approval_model import PendingApproval
@@ -28,15 +25,9 @@ from src.api.telegram_delivery import (
 )
 from src.api.telemetry import set_span_attributes
 
-CHANGES_REJECTION_MESSAGE = (
-    "The patient chose 'Changes needed', so the appointment was NOT booked. "
-    "Ask the patient which details they want to change, save them with "
-    "update_patient_details, then call book_appointment again."
-)
-
 
 async def finalize_run(
-    result,
+    outcome: RunOutcome,
     tool_context: ToolContext,
     user_item: dict,
     user_message_sequence: int,
@@ -50,11 +41,11 @@ async def finalize_run(
     """
     chat_session_id = tool_context.chat_session_id
 
-    if result.interruptions:
+    if isinstance(outcome, NeedsApproval):
         await services.pending_approval_service.save(
             PendingApproval(
                 chat_session_id=chat_session_id,
-                run_state=result.to_state().to_string(context_serializer=lambda _: {}),
+                run_state=outcome.state,
                 user_item=user_item,
                 user_message_sequence=user_message_sequence,
             )
@@ -68,35 +59,29 @@ async def finalize_run(
     ai_message = ChatMessage(
         session_id=chat_session_id,
         sender_type=SenderType.bot,
-        message_content=result.final_output,
+        message_content=outcome.text,
         message_sequence=user_message_sequence + 1,
     )
     await services.chat_history_service.add_message(ai_message)
 
     await services.chat_history_service.add_agent_items(
         chat_session_id,
-        [user_item]
-        + [
-            item.to_input_item()
-            for item in result.new_items
-            if not isinstance(item, ToolApprovalItem)
-        ],
+        [user_item] + outcome.items,
     )
     await services.pending_approval_service.delete(chat_session_id)
 
     # whatsapp_client.send_text_message(to=WHATSAPP_RECIPIENT_NUMBER, message=result.final_output)
     if stop_typing is not None:
         await stop_typing()
-    deliver_reply(services.telegram_client, chat_id, result.final_output)
+    deliver_reply(services.telegram_client, chat_id, outcome.text)
 
-    return result.final_output
+    return outcome.text
 
 
 async def handle_message(message: Message, services: ChatServices):
     """Run the agent on a patient's chat message."""
     patient_ph_no = str(message.from_user.id)
-    today_str = date.today().strftime("%A, %B %d, %Y")
-    patient_message = f"[Current date: {today_str}]\n{message.text}"
+    patient_message = message.text
 
     chat_history_service = services.chat_history_service
     patient, chat_session = await resolve_conversation(
@@ -142,12 +127,6 @@ async def handle_message(message: Message, services: ChatServices):
         await chat_history_service.add_agent_items(chat_session.id, previous_items)
 
     user_item = {"role": "user", "content": patient_message}
-    input_list = format_messages_for_runner(
-        user_question=patient_message,
-        previous_items=previous_items,
-        system_prompt=get_system_prompt(),
-    )
-
     tool_context = await build_tool_context(
         patient,
         chat_session.id,
@@ -156,10 +135,12 @@ async def handle_message(message: Message, services: ChatServices):
     )
 
     async with typing_indicator(services.telegram_client, patient_ph_no) as stop_typing:
-        response = await run_agent(services.agent, input_list, tool_context)
+        outcome = await services.agent_runtime.run(
+            previous_items, patient_message, tool_context
+        )
 
         return await finalize_run(
-            response,
+            outcome,
             tool_context,
             user_item,
             user_message.message_sequence,
@@ -229,22 +210,15 @@ async def resume_approval(
         services.appointment_service,
         services.patient_intake_service,
     )
-    state = await RunState.from_string(
-        services.agent,
-        pending.run_state,
-        context_override=RunContextWrapper(tool_context),
-    )
-    for interruption in state.get_interruptions():
-        if decision == APPROVE:
-            state.approve(interruption)
-        else:
-            state.reject(interruption, rejection_message=CHANGES_REJECTION_MESSAGE)
+    decision = Decision.GO_AHEAD if decision == APPROVE else Decision.CHANGES_NEEDED
 
     async with typing_indicator(services.telegram_client, patient_ph_no) as stop_typing:
-        response = await run_agent(services.agent, state)
+        outcome = await services.agent_runtime.resume(
+            pending.run_state, tool_context, decision
+        )
 
         return await finalize_run(
-            response,
+            outcome,
             tool_context,
             pending.user_item,
             pending.user_message_sequence,

@@ -9,10 +9,12 @@ import pytest
 from fastapi import HTTPException
 
 from src.api import chat_flow, telegram_delivery
+from src.api.agent_runtime import Finished, NeedsApproval
 from src.api import whatsapp_webhook_api as webhook
 from src.api.agent_tools.book_appointment import book_appointment
 from src.api.dependencies import ChatServices
 from src.api.clients.telegram_client import TelegramAPIError
+from src.api.models.chat_model import Decision
 from src.api.models.pending_approval_model import PendingApproval
 from src.api.models.telegram_model import TelegramWebhookUpdate
 from tests.api.unit.test_agent_tools_context import FULL, make_context
@@ -64,16 +66,13 @@ def test_approval_prompt_has_summary_and_both_buttons():
 
 async def test_finalize_run_saves_state_when_paused():
     context = make_context(**FULL)
-    state = Mock()
-    state.to_string.return_value = "serialized"
-    result = SimpleNamespace(interruptions=[object()], to_state=lambda: state)
     pending_service, history_service, telegram = Mock(), Mock(), Mock()
     pending_service.save = AsyncMock()
     history_service.add_message = AsyncMock()
     history_service.add_agent_items = AsyncMock()
 
     reply = await chat_flow.finalize_run(
-        result,
+        NeedsApproval(state="serialized"),
         context,
         {"role": "user", "content": "x"},
         5,
@@ -95,16 +94,14 @@ async def test_finalize_run_saves_state_when_paused():
 
 async def test_finalize_run_persists_and_clears_pending_when_done():
     context = make_context(**FULL)
-    item = Mock()
-    item.to_input_item.return_value = {"type": "message"}
-    result = SimpleNamespace(interruptions=[], final_output="Booked!", new_items=[item])
+    outcome = Finished(text="Booked!", items=[{"type": "message"}])
     pending_service, history_service, telegram = Mock(), Mock(), Mock()
     pending_service.delete = AsyncMock()
     history_service.add_message = AsyncMock()
     history_service.add_agent_items = AsyncMock()
 
     reply = await chat_flow.finalize_run(
-        result,
+        outcome,
         context,
         {"role": "user"},
         5,
@@ -128,13 +125,8 @@ async def test_finalize_run_persists_and_clears_pending_when_done():
 @pytest.fixture
 def approval_env(monkeypatch):
     """Everything handle_approval needs, with the agent run stubbed out."""
-    interruption = object()
-    state = Mock()
-    state.get_interruptions.return_value = [interruption]
-    monkeypatch.setattr(
-        chat_flow.RunState, "from_string", AsyncMock(return_value=state)
-    )
-    monkeypatch.setattr(chat_flow, "run_agent", AsyncMock(return_value="result"))
+    runtime = Mock()
+    runtime.resume = AsyncMock(return_value="outcome")
     monkeypatch.setattr(
         chat_flow, "build_tool_context", AsyncMock(return_value=make_context(**FULL))
     )
@@ -175,14 +167,14 @@ def approval_env(monkeypatch):
                 chat_history_service=history_service,
                 patient_intake_service=intake_service,
                 pending_approval_service=pending_service,
+                agent_runtime=runtime,
                 telegram_client=telegram,
             ),
         )
 
     return SimpleNamespace(
         call=call,
-        state=state,
-        interruption=interruption,
+        runtime=runtime,
         pending_service=pending_service,
         patient_service=patient_service,
         telegram=telegram,
@@ -192,21 +184,17 @@ def approval_env(monkeypatch):
 async def test_go_ahead_approves_and_resumes(approval_env):
     reply = await approval_env.call(callback_query("approve"))
 
-    approval_env.state.approve.assert_called_once_with(approval_env.interruption)
-    approval_env.state.reject.assert_not_called()
-    chat_flow.run_agent.assert_awaited_once()
+    approval_env.runtime.resume.assert_awaited_once()
+    assert approval_env.runtime.resume.await_args.args[2] == Decision.GO_AHEAD
+    assert approval_env.runtime.resume.await_args.args[0] == "s"
     assert reply == "final"
 
 
 async def test_changes_needed_rejects_with_message_and_resumes(approval_env):
     await approval_env.call(callback_query("changes_needed"))
 
-    approval_env.state.reject.assert_called_once_with(
-        approval_env.interruption,
-        rejection_message=chat_flow.CHANGES_REJECTION_MESSAGE,
-    )
-    approval_env.state.approve.assert_not_called()
-    chat_flow.run_agent.assert_awaited_once()
+    approval_env.runtime.resume.assert_awaited_once()
+    assert approval_env.runtime.resume.await_args.args[2] == Decision.CHANGES_NEEDED
 
 
 async def test_nothing_pending_does_not_run_agent(approval_env):
@@ -215,7 +203,7 @@ async def test_nothing_pending_does_not_run_agent(approval_env):
     reply = await approval_env.call(callback_query("approve"))
 
     assert "nothing waiting" in reply
-    chat_flow.run_agent.assert_not_called()
+    approval_env.runtime.resume.assert_not_called()
 
 
 async def test_decision_from_unknown_sender_creates_patient_and_finds_nothing(
@@ -228,7 +216,7 @@ async def test_decision_from_unknown_sender_creates_patient_and_finds_nothing(
 
     approval_env.patient_service.create_patient.assert_awaited_once()
     assert "nothing waiting" in reply
-    chat_flow.run_agent.assert_not_called()
+    approval_env.runtime.resume.assert_not_called()
 
 
 async def test_unknown_decision_reprompts_without_running(approval_env):
@@ -236,7 +224,7 @@ async def test_unknown_decision_reprompts_without_running(approval_env):
 
     assert "reply_markup" in reply
     approval_env.telegram.send_message.assert_called_once_with("42", **reply)
-    chat_flow.run_agent.assert_not_called()
+    approval_env.runtime.resume.assert_not_called()
 
 
 MESSAGE = {
@@ -305,7 +293,7 @@ async def test_button_press_is_answered_after_buttons_removed_before_agent_runs(
     approval_env.telegram.answer_callback_query.side_effect = lambda *a: order.append(
         "answer"
     )
-    chat_flow.run_agent.side_effect = lambda *a, **k: order.append("run") or "result"
+    approval_env.runtime.resume.side_effect = lambda *a, **k: order.append("run")
 
     update = callback_query("approve")
     update.message = SimpleNamespace(message_id=7, chat=SimpleNamespace(id=42))
@@ -328,7 +316,7 @@ async def test_failed_answer_does_not_block_the_decision(approval_env):
 
     reply = await approval_env.call(callback_query("approve"))
 
-    approval_env.state.approve.assert_called_once_with(approval_env.interruption)
+    approval_env.runtime.resume.assert_awaited_once()
     assert reply == "final"
 
 
@@ -353,7 +341,7 @@ async def test_failed_button_removal_does_not_block_the_decision(approval_env):
 
 
 async def test_failed_resume_restores_pending(approval_env):
-    chat_flow.run_agent.side_effect = RuntimeError("boom")
+    approval_env.runtime.resume.side_effect = RuntimeError("boom")
 
     with pytest.raises(RuntimeError):
         await approval_env.call(callback_query("approve"))

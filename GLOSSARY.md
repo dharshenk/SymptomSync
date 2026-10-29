@@ -35,3 +35,15 @@ _Avoid_: Pending booking
 **Decision**:
 The Patient's answer to an Approval Prompt: Go Ahead books the appointment, Changes needed cancels the booking attempt and asks what to change.
 _Avoid_: Response, button press
+
+**Incoming Message**:
+A Patient's chat message, stripped of any messaging-platform detail: who sent it (Sender ID) and what it says.
+_Avoid_: Update, webhook payload
+
+**Reply**:
+What the assistant sends back to the Patient after handling an Incoming Message or a Decision: plain text, or an Approval Prompt.
+_Avoid_: Response, output
+
+**Channel**:
+The messaging platform a Patient talks through (currently Telegram). It delivers Incoming Messages and Decisions, and carries Replies back.
+_Avoid_: Provider, transport

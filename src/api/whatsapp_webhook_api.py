@@ -3,11 +3,10 @@ from dotenv import load_dotenv
 from fastapi import Depends, APIRouter, HTTPException
 import os
 
-from src.api.chat_flow import handle_approval
 from src.api.clients.whatsapp_client import WhatsAppClient, WhatsAppConfig
 from src.api.dependencies import ChatServices, get_chat_services
 from src.api.models.telegram_model import TelegramWebhookUpdate
-from src.api.telegram_adapter import handle_message
+from src.api.telegram_adapter import handle_callback, handle_message
 
 load_dotenv()
 
@@ -34,7 +33,7 @@ async def telegram_webhook(
 ):
     """Single Telegram entry point: a button press resumes a paused run, a message starts one."""
     if update.callback_query:
-        return await handle_approval(update.callback_query, services)
+        return await handle_callback(update.callback_query, services)
     if update.message:
         return await handle_message(update.message, services)
     raise HTTPException(

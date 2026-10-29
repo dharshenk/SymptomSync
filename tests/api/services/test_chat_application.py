@@ -2,10 +2,14 @@
 
 import pytest
 
-from src.api.chat_application import STILL_WORKING, ChatApplication
+from src.api.chat_application import (
+    NOTHING_WAITING,
+    STILL_WORKING,
+    ChatApplication,
+)
 from src.api.agent_runtime import Finished, NeedsApproval
 from src.api.conversation import session_id_for
-from src.api.models.chat_model import Decision, IncomingMessage
+from src.api.models.chat_model import Decision, IncomingDecision, IncomingMessage
 from src.api.models.chat_session_model import ChatMessage, SenderType
 from tests.api.fake_agent_runtime import FakeAgentRuntime
 
@@ -172,4 +176,123 @@ async def test_message_while_decision_is_processing_gets_still_working(
     reply = await app.handle_message(IncomingMessage(sender_id=SENDER, text="hello?"))
 
     assert reply.text == STILL_WORKING and reply.choices == []
+    assert len(runtime.calls) == 1
+
+
+async def paused(app, text="book"):
+    return await app.handle_message(IncomingMessage(sender_id=SENDER, text=text))
+
+
+def decision(value: Decision) -> IncomingDecision:
+    return IncomingDecision(sender_id=SENDER, decision=value)
+
+
+async def test_go_ahead_resumes_the_saved_run_and_persists_the_exchange(
+    make_app, pending_approval_service, chat_history_service
+):
+    app, runtime = make_app(
+        NeedsApproval(state="serialized"),
+        Finished(text="Booked!", items=[{"type": "tool_output"}]),
+    )
+    await paused(app)
+
+    reply = await app.handle_decision(decision(Decision.GO_AHEAD))
+
+    assert reply.text == "Booked!" and reply.choices == []
+    _, state, context, resumed_with = runtime.calls[1]
+    session_id = session_id_for(SENDER)
+    assert (state, resumed_with) == ("serialized", Decision.GO_AHEAD)
+    assert context.chat_session_id == session_id
+    assert await pending_approval_service.get(session_id) is None
+    messages = await chat_history_service.get_session_messages(session_id)
+    assert [(m.sender_type, m.message_content) for m in messages] == [
+        (SenderType.patient, "book"),
+        (SenderType.bot, "Booked!"),
+    ]
+    assert await chat_history_service.get_agent_items(session_id) == [
+        {"role": "user", "content": "book"},
+        {"type": "tool_output"},
+    ]
+
+
+async def test_changes_needed_resumes_with_that_decision_and_asks_what_to_change(
+    make_app, pending_approval_service
+):
+    app, runtime = make_app(
+        NeedsApproval(state="s"), Finished(text="What should change?", items=[])
+    )
+    await paused(app)
+
+    reply = await app.handle_decision(decision(Decision.CHANGES_NEEDED))
+
+    assert runtime.calls[1][3] == Decision.CHANGES_NEEDED
+    assert reply.text == "What should change?"
+    assert await pending_approval_service.get(session_id_for(SENDER)) is None
+
+
+async def test_repeated_decision_finds_nothing_and_does_not_resume_again(make_app):
+    app, runtime = make_app(NeedsApproval(state="s"), Finished(text="Booked", items=[]))
+    await paused(app)
+    await app.handle_decision(decision(Decision.GO_AHEAD))
+
+    reply = await app.handle_decision(decision(Decision.GO_AHEAD))
+
+    assert reply.text == NOTHING_WAITING and reply.choices == []
+    assert [call[0] for call in runtime.calls] == ["run", "resume"]
+
+
+async def test_decision_with_nothing_pending_does_not_run_the_agent(make_app):
+    app, runtime = make_app()
+
+    reply = await app.handle_decision(decision(Decision.GO_AHEAD))
+
+    assert reply.text == NOTHING_WAITING
+    assert runtime.calls == []
+
+
+async def test_failed_decision_restores_the_pending_approval_for_a_retry(
+    make_app, pending_approval_service
+):
+    app, runtime = make_app(
+        NeedsApproval(state="s"),
+        RuntimeError("llm down"),
+        Finished(text="Booked", items=[]),
+    )
+    await paused(app)
+
+    with pytest.raises(RuntimeError):
+        await app.handle_decision(decision(Decision.GO_AHEAD))
+
+    pending = await pending_approval_service.get(session_id_for(SENDER))
+    assert pending.status == "pending" and pending.run_state == "s"
+    reply = await app.handle_decision(decision(Decision.GO_AHEAD))
+    assert reply.text == "Booked"
+
+
+async def test_prompt_is_resent_while_pending_and_absent_when_nothing_waits(
+    make_app,
+):
+    app, runtime = make_app(NeedsApproval(state="s"))
+    assert (await app.pending_prompt(SENDER)).text == NOTHING_WAITING
+    await paused(app)
+
+    reply = await app.pending_prompt(SENDER)
+
+    assert [c.decision for c in reply.choices] == [
+        Decision.GO_AHEAD,
+        Decision.CHANGES_NEEDED,
+    ]
+    assert len(runtime.calls) == 1
+
+
+async def test_decision_while_another_is_processing_gets_still_working(
+    make_app, pending_approval_service
+):
+    app, runtime = make_app(NeedsApproval(state="s"))
+    await paused(app)
+    await pending_approval_service.claim(session_id_for(SENDER))
+
+    reply = await app.handle_decision(decision(Decision.GO_AHEAD))
+
+    assert reply.text == STILL_WORKING
     assert len(runtime.calls) == 1

@@ -11,7 +11,13 @@ import uuid
 from src.api.agent_runtime import Finished, NeedsApproval, RunOutcome
 from src.api.agent_tools import ToolContext
 from src.api.conversation import resolve_conversation
-from src.api.models.chat_model import Choice, Decision, IncomingMessage, Reply
+from src.api.models.chat_model import (
+    Choice,
+    Decision,
+    IncomingDecision,
+    IncomingMessage,
+    Reply,
+)
 from src.api.models.chat_session_model import ChatMessage, SenderType
 from src.api.models.patient_intake_model import PatientIntakeState
 from src.api.models.patient_model import Patient
@@ -24,6 +30,7 @@ from src.api.services.pending_approval_service import PendingApprovalService
 from src.api.telemetry import set_span_attributes
 
 STILL_WORKING = "Still working on your booking, one moment."
+NOTHING_WAITING = "There is nothing waiting for your approval."
 
 
 def get_doctor_id() -> uuid.UUID:
@@ -183,6 +190,69 @@ class ChatApplication:
         self.appointment_service = appointment_service
         self.agent_runtime = agent_runtime
 
+    async def _reply_for_pending(
+        self, chat_session_id: uuid.UUID, pending: PendingApproval
+    ) -> Reply:
+        if pending.status == "processing":
+            return Reply(text=STILL_WORKING)
+        intake_state = await self.patient_intake_service.get_intake_state(
+            chat_session_id
+        )
+        return approval_prompt(intake_state)
+
+    async def pending_prompt(self, sender_id: str) -> Reply:
+        """The Approval Prompt again if one is waiting, else say nothing is."""
+        _, chat_session = await resolve_conversation(
+            sender_id, self.patient_service, self.chat_history_service
+        )
+        pending = await self.pending_approval_service.get(chat_session.id)
+        if not pending:
+            return Reply(text=NOTHING_WAITING)
+        return await self._reply_for_pending(chat_session.id, pending)
+
+    async def handle_decision(self, decision: IncomingDecision) -> Reply:
+        """Resume the Pending Approval with the Patient's Decision."""
+        patient, chat_session = await resolve_conversation(
+            decision.sender_id, self.patient_service, self.chat_history_service
+        )
+        set_span_attributes(
+            {"patient.id": str(patient.id), "chat_session.id": str(chat_session.id)}
+        )
+
+        # Claiming takes the row, so a repeated press finds nothing and cannot
+        # resume the same run twice.
+        pending = await self.pending_approval_service.claim(chat_session.id)
+        if not pending:
+            # Another press may still be applying it: that is not "nothing waiting".
+            in_flight = await self.pending_approval_service.get(chat_session.id)
+            if in_flight and in_flight.status == "processing":
+                return Reply(text=STILL_WORKING)
+            return Reply(text=NOTHING_WAITING)
+
+        try:
+            # The context isn't saved with the run state (services, UUIDs).
+            tool_context = await build_tool_context(
+                patient,
+                chat_session.id,
+                self.appointment_service,
+                self.patient_intake_service,
+            )
+            outcome = await self.agent_runtime.resume(
+                pending.run_state, tool_context, decision.decision
+            )
+            return await finalize_run(
+                outcome,
+                tool_context,
+                pending.user_item,
+                pending.user_message_sequence,
+                self.chat_history_service,
+                self.pending_approval_service,
+            )
+        except Exception:
+            # The Decision wasn't applied: restore the row so it can be retried.
+            await self.pending_approval_service.save(pending)
+            raise
+
     async def handle_message(self, message: IncomingMessage) -> Reply:
         """Run the agent on a Patient's message and return what to say back."""
         patient, chat_session = await resolve_conversation(
@@ -194,13 +264,8 @@ class ChatApplication:
 
         # A run is paused (or its decision is being applied): don't start another one.
         pending = await self.pending_approval_service.get(chat_session.id)
-        if pending and pending.status == "processing":
-            return Reply(text=STILL_WORKING)
         if pending:
-            intake_state = await self.patient_intake_service.get_intake_state(
-                chat_session.id
-            )
-            return approval_prompt(intake_state)
+            return await self._reply_for_pending(chat_session.id, pending)
 
         previous_messages = await self.chat_history_service.get_session_messages(
             session_id=chat_session.id

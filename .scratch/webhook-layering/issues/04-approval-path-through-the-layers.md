@@ -6,12 +6,12 @@
 
 **Status:** ready-for-agent
 
-- [ ] The Approval Prompt is a neutral Reply with choices; the booking-summary text is built in the application layer
-- [ ] Callback strings `approve` / `changes_needed` appear only in the Telegram adapter
-- [ ] Go Ahead resumes the run and books; Changes needed does not book and asks the Patient what to change
-- [ ] A repeated press does nothing the second time
-- [ ] A message while a Decision is pending gets the Approval Prompt again; while it is being applied, a "still working" reply
-- [ ] A failure while applying a Decision restores the Pending Approval so it can be retried
-- [ ] An unknown callback value re-sends the prompt, or says nothing is waiting
-- [ ] Application-seam tests cover pause, Go Ahead, Changes needed, repeated press, message while pending, message while processing and error restore
-- [ ] Adapter-seam tests cover callback mapping, keyboard rendering and the ack-before-run ordering
+- [x] The Approval Prompt is a neutral Reply with choices; the booking-summary text is built in the application layer
+- [x] Callback strings `approve` / `changes_needed` appear only in the Telegram adapter
+- [x] Go Ahead resumes the run and books; Changes needed does not book and asks the Patient what to change
+- [x] A repeated press does nothing the second time
+- [x] A message while a Decision is pending gets the Approval Prompt again; while it is being applied, a "still working" reply
+- [x] A failure while applying a Decision restores the Pending Approval so it can be retried
+- [x] An unknown callback value re-sends the prompt, or says nothing is waiting
+- [x] Application-seam tests cover pause, Go Ahead, Changes needed, repeated press, message while pending, message while processing and error restore
+- [x] Adapter-seam tests cover callback mapping, keyboard rendering and the ack-before-run ordering

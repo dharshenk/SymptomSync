@@ -14,6 +14,7 @@ CALLBACK_FOR_DECISION = {
     Decision.GO_AHEAD: APPROVE,
     Decision.CHANGES_NEEDED: CHANGES_NEEDED,
 }
+DECISION_FOR_CALLBACK = {callback: d for d, callback in CALLBACK_FOR_DECISION.items()}
 
 
 @asynccontextmanager

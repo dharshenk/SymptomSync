@@ -1,4 +1,7 @@
 from typing import Annotated
+from collections.abc import Awaitable, Callable
+from contextlib import asynccontextmanager
+import asyncio
 from jinja2 import Template
 from src.api.services.chat_history_service import ChatHistoryService
 from src.api.services.appointment_service import AppointmentService
@@ -171,6 +174,35 @@ async def run_agent(
     return await Runner.run(starting_agent=agent, input=agent_input, context=context)
 
 
+@asynccontextmanager
+async def typing_indicator(telegram_client: TelegramClient, chat_id: str):
+    """Refresh the typing status while an agent run is in progress."""
+    stopped = asyncio.Event()
+
+    async def refresh():
+        while not stopped.is_set():
+            try:
+                await asyncio.to_thread(telegram_client.send_typing_action, chat_id)
+            except TelegramAPIError:
+                logger.exception("Failed to send typing action to chat_id=%s", chat_id)
+            try:
+                await asyncio.wait_for(stopped.wait(), timeout=4)
+            except asyncio.TimeoutError:
+                pass
+
+    task = asyncio.create_task(refresh())
+
+    async def stop():
+        stopped.set()
+        await task
+
+    try:
+        await asyncio.sleep(0)
+        yield stop
+    finally:
+        await stop()
+
+
 async def build_tool_context(
     patient: Patient,
     chat_session_id: uuid.UUID,
@@ -295,6 +327,7 @@ async def finalize_run(
     pending_approval_service: PendingApprovalService,
     telegram_client: TelegramClient,
     chat_id: str,
+    stop_typing: Callable[[], Awaitable[None]] | None = None,
 ):
     """Persist a finished run, or save a paused one until the patient decides.
 
@@ -312,6 +345,8 @@ async def finalize_run(
             )
         )
         prompt = approval_prompt(tool_context.patient_intake_state)
+        if stop_typing is not None:
+            await stop_typing()
         deliver_reply(telegram_client, chat_id, prompt)
         return prompt
 
@@ -335,6 +370,8 @@ async def finalize_run(
     await pending_approval_service.delete(chat_session_id)
 
     # whatsapp_client.send_text_message(to=WHATSAPP_RECIPIENT_NUMBER, message=result.final_output)
+    if stop_typing is not None:
+        await stop_typing()
     deliver_reply(telegram_client, chat_id, result.final_output)
 
     return result.final_output
@@ -414,18 +451,20 @@ async def handle_message(
         patient, chat_session.id, appointment_service, patient_intake_service
     )
 
-    response = await run_agent(agent, input_list, tool_context)
+    async with typing_indicator(telegram_client, patient_ph_no) as stop_typing:
+        response = await run_agent(agent, input_list, tool_context)
 
-    return await finalize_run(
-        response,
-        tool_context,
-        user_item,
-        user_message.message_sequence,
-        chat_history_service,
-        pending_approval_service,
-        telegram_client,
-        patient_ph_no,
-    )
+        return await finalize_run(
+            response,
+            tool_context,
+            user_item,
+            user_message.message_sequence,
+            chat_history_service,
+            pending_approval_service,
+            telegram_client,
+            patient_ph_no,
+            stop_typing=stop_typing,
+        )
 
 
 async def handle_approval(
@@ -520,18 +559,20 @@ async def resume_approval(
         else:
             state.reject(interruption, rejection_message=CHANGES_REJECTION_MESSAGE)
 
-    response = await run_agent(agent, state)
+    async with typing_indicator(telegram_client, patient_ph_no) as stop_typing:
+        response = await run_agent(agent, state)
 
-    return await finalize_run(
-        response,
-        tool_context,
-        pending.user_item,
-        pending.user_message_sequence,
-        chat_history_service,
-        pending_approval_service,
-        telegram_client,
-        patient_ph_no,
-    )
+        return await finalize_run(
+            response,
+            tool_context,
+            pending.user_item,
+            pending.user_message_sequence,
+            chat_history_service,
+            pending_approval_service,
+            telegram_client,
+            patient_ph_no,
+            stop_typing=stop_typing,
+        )
 
 
 @router.post("/webhook")

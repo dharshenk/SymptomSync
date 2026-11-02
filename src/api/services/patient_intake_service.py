@@ -5,6 +5,7 @@ from uuid import UUID
 
 from src.api.clients.postgres_sql_client import PostgresSQLClient
 from src.api.models.patient_intake_model import PatientIntakeState, PatientIntakeUpdate
+from src.api.telemetry import trace_db_operation
 
 # Select supported fields so older database columns do not enter the model.
 _COLUMNS = ", ".join(PatientIntakeState.model_fields)
@@ -16,6 +17,7 @@ class PatientIntakeService:
     def __init__(self, postgres_client: PostgresSQLClient):
         self._postgres_client = postgres_client
 
+    @trace_db_operation("patient_intake.create_intake_state")
     async def create_intake_state(
         self, intake_state: PatientIntakeState
     ) -> PatientIntakeState:
@@ -29,6 +31,7 @@ class PatientIntakeService:
         )
         return intake_state
 
+    @trace_db_operation("patient_intake.get_intake_state")
     async def get_intake_state(
         self, chat_session_id: UUID
     ) -> PatientIntakeState | None:
@@ -40,6 +43,7 @@ class PatientIntakeService:
         )
         return PatientIntakeState(**rows[0]) if rows else None
 
+    @trace_db_operation("patient_intake.update_intake_state")
     async def update_intake_state(
         self, chat_session_id: UUID, **fields: Any
     ) -> PatientIntakeState | None:
@@ -72,6 +76,7 @@ class PatientIntakeService:
         )
         return PatientIntakeState(**rows[0]) if rows else None
 
+    @trace_db_operation("patient_intake.delete_intake_state")
     async def delete_intake_state(self, chat_session_id: UUID) -> bool:
         """Delete a session's state, returning False if no record exists."""
         rowcount = self._postgres_client.execute_command(

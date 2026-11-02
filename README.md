@@ -67,18 +67,32 @@ Patients Slots  Booking
 6. PDF summary is generated
 7. Confirmation is sent
 
-## Tracing with Jaeger
+## Tracing with Grafana Cloud
 
-`docker compose up --build` starts Jaeger alongside the API and sends traces to
-`http://jaeger:4318` over the Compose network. Open <http://localhost:16686> and
-select the `symptom-sync` service after sending an API request. Jaeger uses
-in-memory storage; its traces are lost when the container restarts.
+The API exports traces directly to Grafana Cloud using OTLP over HTTPS. In your
+Grafana Cloud stack's OpenTelemetry configuration, generate connection settings
+with permission to write traces. Copy the endpoint and authentication header into
+your local, ignored `.env` file:
 
-For an API running locally, start Jaeger with `docker compose up -d jaeger`, then
-set `OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318` in the API process's
-environment before starting Uvicorn. Alternatively, set
-`OTEL_EXPORTER_OTLP_TRACES_ENDPOINT=http://localhost:4318/v1/traces` (this takes
-precedence over the base endpoint, including in Compose).
+```dotenv
+OTEL_EXPORTER_OTLP_ENDPOINT=https://<your-otlp-host>/otlp
+OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf
+OTEL_EXPORTER_OTLP_HEADERS=Authorization=Basic%20<base64-credentials>
+OTEL_SDK_DISABLED=false
+```
+
+Use your stack's generated values, including `Basic%20` for Python's header
+parser. Keep credentials out of version control. See Grafana's
+[OTLP connection instructions](https://grafana.com/docs/grafana-cloud/send-data/otlp/send-data-otlp/).
+The exporter appends `/v1/traces` to the base endpoint. If you previously set
+`OTEL_EXPORTER_OTLP_TRACES_ENDPOINT` or `OTEL_EXPORTER_OTLP_TRACES_HEADERS`, remove
+them or update them to your Grafana Cloud values; they override the generic settings.
+
+Run `docker compose up --build -d app` to apply the settings. Compose reads them
+from `.env`. For local Uvicorn runs, load them with
+`uv run uvicorn main:app --app-dir src --reload --env-file .env`.
+After sending an API request, open Grafana Explore, select your traces data source,
+and filter by `service.name = symptom-sync`.
 
 Without either endpoint configured, the app leaves tracing disabled. Set
 `OTEL_SDK_DISABLED=true` to disable tracing even when an endpoint is configured.

@@ -1,0 +1,6 @@
+{
+  "name": "github-feat-arch-change",
+  "issuer": "https://token.actions.githubusercontent.com",
+  "subject": "repo:dharshenk/SymptomSync:ref:refs/heads/feat/arch-change",
+  "audiences": ["api://AzureADTokenExchange"]
+}

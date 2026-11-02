@@ -1,9 +1,9 @@
+from src.api.telemetry import trace_db_operation
 import json
 from uuid import UUID
 
 from src.api.clients.postgres_sql_client import PostgresSQLClient
 from src.api.models.pending_approval_model import PendingApproval
-
 
 # A claim older than this is treated as abandoned (e.g. the process died mid-run).
 CLAIM_TIMEOUT_SECONDS = 120
@@ -14,6 +14,7 @@ class PendingApprovalService:
     def __init__(self, postgres_client: PostgresSQLClient):
         self._postgres_client = postgres_client
 
+    @trace_db_operation("pending_approval.save")
     async def save(self, pending_approval: PendingApproval) -> None:
         upsert_query = """
             INSERT INTO pending_approvals (
@@ -45,6 +46,7 @@ class PendingApprovalService:
         }
         self._postgres_client.execute_command(query=upsert_query, params=params)
 
+    @trace_db_operation("pending_approval.get")
     async def get(self, chat_session_id: UUID) -> PendingApproval | None:
         select_query = """
             SELECT
@@ -82,6 +84,7 @@ class PendingApprovalService:
             status=row["status"],
         )
 
+    @trace_db_operation("pending_approval.claim")
     async def claim(self, chat_session_id: UUID) -> PendingApproval | None:
         """Atomically take the pending approval; only one caller can get it.
 
@@ -124,6 +127,7 @@ class PendingApprovalService:
             user_message_sequence=row["user_message_sequence"],
         )
 
+    @trace_db_operation("pending_approval.delete")
     async def delete(self, chat_session_id: UUID) -> None:
         delete_query = """
             DELETE FROM pending_approvals

@@ -7,9 +7,18 @@ from contextlib import contextmanager
 from psycopg2.extras import RealDictCursor
 from typing import Any
 from psycopg2.extensions import connection as psycopg2_connection
-from src.api.telemetry import traced
+from src.api.telemetry import db_operation_context, traced
 
 load_dotenv()
+
+
+def _db_span_name(operation: str):
+    """Include the calling service operation without exposing its arguments."""
+
+    def name(*args, **kwargs) -> str:
+        return f"db.{db_operation_context.get() or operation}"
+
+    return name
 
 
 def _get_query_operation(query: str) -> str:
@@ -123,7 +132,7 @@ class PostgresSQLClient:
                 conn.rollback()
             raise
 
-    @traced("db.execute_query", attrs=_db_attrs)
+    @traced(_db_span_name("execute_query"), attrs=_db_attrs)
     def execute_query(
         self,
         query: str,
@@ -152,7 +161,7 @@ class PostgresSQLClient:
 
         return result
 
-    @traced("db.execute_command", attrs=_db_attrs)
+    @traced(_db_span_name("execute_command"), attrs=_db_attrs)
     def execute_command(self, query: str, params: tuple | dict | None = None) -> int:
 
         with self.transaction() as conn:
@@ -162,7 +171,7 @@ class PostgresSQLClient:
 
         return result
 
-    @traced("db.execute_many", attrs=_db_attrs)
+    @traced(_db_span_name("execute_many"), attrs=_db_attrs)
     def execute_many(self, query: str, params_list: list[tuple | dict]) -> int:
 
         with self.transaction() as conn:
@@ -172,7 +181,7 @@ class PostgresSQLClient:
 
         return result
 
-    @traced("db.call_procedure", attrs=_procedure_attrs)
+    @traced(_db_span_name("call_procedure"), attrs=_procedure_attrs)
     def call_procedure(
         self, proc_name: str, params: list | None = None
     ) -> list[Any] | None:

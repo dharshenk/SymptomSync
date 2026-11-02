@@ -1,3 +1,5 @@
+from src.api.telemetry import trace_db_operation
+
 # api/services/doctor_service.py
 from src.api.clients.postgres_sql_client import PostgresSQLClient
 from src.api.models.doctor_model import Doctor
@@ -13,6 +15,7 @@ class DoctorService:
         self._postgres_client = postgres_client
         self._logger = logging.getLogger(__name__)
 
+    @trace_db_operation("doctor.create_doctor")
     async def create_doctor(self, doctor: Doctor) -> bool:
         """
         Insert a new doctor record.
@@ -71,6 +74,7 @@ class DoctorService:
             self._logger.error(f"Error creating doctor: {str(e)}")
             raise
 
+    @trace_db_operation("doctor.get_doctor")
     async def get_doctor(self, doctor_id: UUID) -> Doctor | None:
         """
         Fetch a doctor by internal UUID.
@@ -91,6 +95,7 @@ class DoctorService:
 
         return Doctor(**rows[0])
 
+    @trace_db_operation("doctor.get_doctor_by_license")
     async def get_doctor_by_license(self, license_number: str) -> Doctor | None:
         """
         Fetch a doctor by license number.
@@ -113,6 +118,7 @@ class DoctorService:
 
         return Doctor(**rows[0])
 
+    @trace_db_operation("doctor.update_doctor")
     async def update_doctor(self, doctor_id: UUID, updates: dict) -> bool:
         """
         Update doctor record with provided fields.
@@ -154,6 +160,7 @@ class DoctorService:
             self._logger.error(f"Error updating doctor: {str(e)}")
             raise
 
+    @trace_db_operation("doctor.delete_doctor")
     async def delete_doctor(self, doctor_id: UUID) -> bool:
         """
         Delete a doctor by ID (hard delete).
@@ -181,6 +188,7 @@ class DoctorService:
             self._logger.error(f"Error deleting doctor: {str(e)}")
             raise
 
+    @trace_db_operation("doctor.deactivate_doctor")
     async def deactivate_doctor(self, doctor_id: UUID) -> bool:
         """
         Deactivate a doctor by setting is_active to False (soft delete).
@@ -213,6 +221,7 @@ class DoctorService:
             self._logger.error(f"Error deactivating doctor: {str(e)}")
             raise
 
+    @trace_db_operation("doctor.list_doctors")
     async def list_doctors(
         self,
         specialization: str | None = None,
@@ -250,6 +259,7 @@ class DoctorService:
             self._logger.error(f"Error listing doctors: {str(e)}")
             return None
 
+    @trace_db_operation("doctor.get_doctors_by_specialization")
     async def get_doctors_by_specialization(
         self, specialization: str, limit: int = 50, offset: int = 0
     ) -> list[Doctor] | None:
@@ -281,6 +291,7 @@ class DoctorService:
             self._logger.error(f"Error fetching doctors by specialization: {str(e)}")
             return None
 
+    @trace_db_operation("doctor.search_doctors")
     async def search_doctors(
         self, query_text: str, limit: int = 50, offset: int = 0
     ) -> list[Doctor] | None:

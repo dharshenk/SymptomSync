@@ -23,13 +23,13 @@ Run from the repository root (imports are `src.api...`, so the root must be on t
 
 One webhook turns a chat message into an LLM agent run with DB-backed tools.
 
-**Request flow** (`src/api/whatsapp_webhook_api.py`, `POST /webhook`): `telegram_webhook` is the single route and accepts a **Telegram** `TelegramWebhookUpdate` (the WhatsApp request model and the GET verification route are commented out). It dispatches on the payload: a `callback_query` (button press) goes to `handle_approval`, a `message` to `handle_message`, anything else gets a 422. `handle_message` then:
+**Request flow** (`src/api/whatsapp_webhook_api.py`, `POST /webhook`; the file keeps its legacy name and now holds only the route, with the logic in `telegram_adapter.py` (parses a message into an `IncomingMessage` or a button press into an `IncomingDecision`, shows typing while `ChatApplication.handle_message` / `handle_decision` runs, renders and sends the returned `Reply` (rendering, sends, buttons and the typing indicator all live in this module); on a press it removes the buttons and acknowledges before the run), `chat_application.py` (`ChatApplication`, channel-neutral: persistence, `build_tool_context`, Approval Prompt, `finalize_run`, the Pending Approval lifecycle in `handle_decision`; the legacy transcript seeding is `seed_agent_items_from_transcript`), `agent_runtime.py` (`AgentRuntime` with `run`/`resume` returning `Finished` or `NeedsApproval`, prompt rendering), and `dependencies.py` (`get_chat_application` builds a `ChatApplication` from the DB services and an `AgentRuntime`; the route also injects the Telegram client)): `telegram_webhook` is the single route and accepts a **Telegram** `TelegramWebhookUpdate` (the WhatsApp request model and the GET verification route are commented out). It dispatches on the payload: a `callback_query` (button press) goes to the adapter's `handle_callback`, a `message` to `handle_message`, anything else gets a 422; the response body is `{"ok": true}`, never the reply text. `handle_message` then:
 1. Gets or creates a `Patient` keyed by the sender's ID (stored in `patient_ph_no`), and a chat session whose ID is `uuid5(NAMESPACE_DNS, patient_ph_no)`.
-2. Loads prior `ChatMessage`s, persists the user message, and builds the message list: the system prompt (a Jinja template read from `SYSTEM_PROMPT_PATH`, rendered with `current_date`) plus history plus the new message.
-3. Loads the session's `patient_intake_state` (creating an empty row if none exists) and builds a `ToolContext` (patient, chat session, services, intake state, latest appointment, hardcoded doctor ID `1111...`) and calls `Runner.run` from the OpenAI Agents SDK.
-4. Hands the result to `finalize_run`. A finished run persists the bot reply and agent items and returns the reply as the HTTP response. Outbound sends to Telegram/WhatsApp are commented out, so replies are not pushed to the chat.
+2. Loads prior `ChatMessage`s, persists the user message, and builds the message list: the system prompt (a Jinja template read from `SYSTEM_PROMPT_PATH`, rendered with `current_date`, the only place the date appears) plus history plus the new message, stored as raw text.
+3. Loads the session's `patient_intake_state` (creating an empty row if none exists) and builds a `ToolContext` (patient, chat session, services, intake state, latest appointment, doctor ID from `DOCTOR_ID`) and calls `AgentRuntime.run` (which wraps `Runner.run` from the OpenAI Agents SDK).
+4. Hands the result to `finalize_run`. A finished run persists the bot reply and agent items and returns it as a `Reply`; the Telegram adapter sends it (a failed send is logged, not raised).
 
-**Approval (HITL)**: `book_appointment` is `@function_tool(needs_approval=...)`; the callable returns True only when the intake (including `preferred_start_time`) is fully filled. When the run is interrupted, `finalize_run` saves `result.to_state().to_string(context_serializer=lambda _: {})` in `pending_approvals` (one row per chat session, via `PendingApprovalService`) and returns a booking summary with Telegram inline buttons (`approve` / `changes_needed`). While a row exists, `handle_message` only re-sends that prompt and does not run the agent. `handle_approval` (a `callback_query` on `POST /webhook`) rebuilds a fresh `ToolContext` with `build_tool_context`, restores the state with `RunState.from_string(..., context_override=RunContextWrapper(ctx))`, then `approve()`s, or `reject()`s with a message telling the LLM to ask what to change, and resumes via `run_agent`. When resuming, do not pass `context=` to `Runner.run`: it replaces the state's context and drops the approval decisions. The context is not stored with the state.
+**Approval (HITL)**: `book_appointment` is `@function_tool(needs_approval=...)`; the callable returns True only when the intake (including `preferred_start_time`) is fully filled. When the run is interrupted, `AgentRuntime` returns `NeedsApproval(state)` and `finalize_run` saves that state string in `pending_approvals` (one row per chat session, via `PendingApprovalService`) and returns a booking summary with Telegram inline buttons (`approve` / `changes_needed`). While a row exists, `handle_message` only re-sends that prompt and does not run the agent. `ChatApplication.handle_decision` (fed by a `callback_query` on `POST /webhook`) claims the row (so a repeat press finds nothing), restores it if the run fails, rebuilds a fresh `ToolContext` with `build_tool_context`, and calls `AgentRuntime.resume(state, ctx, decision)`, which restores the state with `RunState.from_string(..., context_override=RunContextWrapper(ctx))`, `approve()`s, or `reject()`s with a message telling the LLM to ask what to change, and resumes. When resuming, `AgentRuntime` does not pass `context=` to `Runner.run`: it replaces the state's context and drops the approval decisions. The context is not stored with the state.
 
 **Agent flow** read the latest prompt in `src/api/prompts` to understand the workflow of this application
 
@@ -42,3 +42,17 @@ One webhook turns a chat message into an LLM agent run with DB-backed tools.
 **Tracing** (`src/api/telemetry.py`): OpenTelemetry with the `@traced(...)` decorator, used on `agent.run` and on every tool (`traced_tool`) with patient/session attributes. Set `OTEL_SDK_DISABLED=true` to turn tracing off.
 
 **Other**: `clients/redis_client.py` is not wired into the app. PDF reports are generated with ReportLab by `patient_report_service.py` and written to `PATIENT_REPORT_OUTPUT_PATH`. WhatsApp client unit tests live in `src/api/clients/tests/`, while the rest of the tests live in `tests/api/`.
+
+## Agent skills
+
+### Issue tracker
+
+Issues and specs are local markdown files under `.scratch/<feature-slug>/`. See `docs/agents/issue-tracker.md`.
+
+### Triage labels
+
+Default five-role vocabulary (`needs-triage`, `needs-info`, `ready-for-agent`, `ready-for-human`, `wontfix`), recorded as a `Status:` line. See `docs/agents/triage-labels.md`.
+
+### Domain docs
+
+Single-context: root `GLOSSARY.md` + `docs/adr/`. See `docs/agents/domain.md`.

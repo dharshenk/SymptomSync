@@ -3,6 +3,7 @@ import os
 from alembic import context
 from dotenv import load_dotenv
 from sqlalchemy import URL, create_engine
+from sqlalchemy.engine import make_url
 
 load_dotenv()
 
@@ -10,6 +11,10 @@ config = context.config
 
 
 def get_url() -> URL:
+    # NEON_DB_URL (a full connection string) takes precedence over the POSTGRES_* vars
+    neon_url = os.getenv("NEON_DB_URL")
+    if neon_url:
+        return make_url(neon_url).set(drivername="postgresql+psycopg2")
     # Set POSTGRES_MIGRATION_HOST to override the host when running from the host machine
     return URL.create(
         "postgresql+psycopg2",

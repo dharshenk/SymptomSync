@@ -80,14 +80,48 @@ class TelegramClient:
 
         return session
 
+    @traced("telegram.answer_callback_query")
+    def answer_callback_query(
+        self, callback_query_id: str, text: str | None = None
+    ) -> dict[str, Any]:
+        """Acknowledge an inline button press so Telegram stops its loading spinner"""
+        url = f"{self.config.api_url}/answerCallbackQuery"
+        payload: dict[str, Any] = {"callback_query_id": callback_query_id}
+        if text is not None:
+            payload["text"] = text
+
+        return self._post(url, payload)
+
+    @traced("telegram.remove_inline_keyboard")
+    def remove_inline_keyboard(self, chat_id: str, message_id: int) -> dict[str, Any]:
+        """Remove the inline buttons from a sent message"""
+        url = f"{self.config.api_url}/editMessageReplyMarkup"
+        payload = {
+            "chat_id": chat_id,
+            "message_id": message_id,
+            "reply_markup": {"inline_keyboard": []},
+        }
+        return self._post(url, payload)
+
     @traced("telegram.send_message")
-    def send_message(self, chat_id: str, text: str) -> dict[str, Any]:
-        """Send a text message to a Telegram chat"""
+    def send_message(
+        self, chat_id: str, text: str, reply_markup: dict | None = None
+    ) -> dict[str, Any]:
+        """Send a text message to a Telegram chat, optionally with an inline keyboard"""
         url = f"{self.config.api_url}/sendMessage"
-        payload = {"chat_id": chat_id, "text": text}
+        payload: dict[str, Any] = {"chat_id": chat_id, "text": text}
+        if reply_markup is not None:
+            payload["reply_markup"] = reply_markup
 
         self.logger.info(f"Sending message to chat_id={chat_id}")
 
+        result = self._post(url, payload)
+        self.logger.info(
+            f"Message sent successfully. message_id: {result.get('result', {}).get('message_id', 'unknown')}"
+        )
+        return result
+
+    def _post(self, url: str, payload: dict[str, Any]) -> dict[str, Any]:
         try:
             response = self.session.post(
                 url,
@@ -105,9 +139,6 @@ class TelegramClient:
                     details=result,
                 )
 
-            self.logger.info(
-                f"Message sent successfully. message_id: {result.get('result', {}).get('message_id', 'unknown')}"
-            )
             return result
 
         except requests.exceptions.HTTPError as e:

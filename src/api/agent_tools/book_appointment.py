@@ -18,22 +18,37 @@ BOOKING_STEPS = INTAKE_STEPS + (
 )
 
 
-@function_tool
+def _missing_booking_fields(patient_intake_state) -> list[str]:
+    return [
+        label
+        for step in BOOKING_STEPS
+        for key, label in step
+        if _is_blank(getattr(patient_intake_state, key))
+    ]
+
+
+async def _needs_booking_approval(
+    wrapper: RunContextWrapper[ToolContext], params: dict, call_id: str
+) -> bool:
+    """Pause for the patient's approval only once the intake is fully filled.
+
+    With fields still missing the tool runs and returns its "Not Ready" payload.
+    """
+    return not _missing_booking_fields(wrapper.context.patient_intake_state)
+
+
+@function_tool(needs_approval=_needs_booking_approval)
 @traced_tool
 async def book_appointment(wrapper: RunContextWrapper[ToolContext]) -> str:
     """Book the appointment using the saved intake details.
 
     Takes no arguments: the patient, date and start time are read from the saved
     intake details. Only call this once the patient has chosen a start time from
-    the options returned by get_available_slots.
+    the options returned by get_available_slots. The patient is asked to approve
+    the booking before it runs.
     """
     patient_intake_state = wrapper.context.patient_intake_state
-    missing = [
-        label
-        for step in BOOKING_STEPS
-        for key, label in step
-        if _is_blank(getattr(patient_intake_state, key))
-    ]
+    missing = _missing_booking_fields(patient_intake_state)
     if missing:
         return json.dumps(
             {

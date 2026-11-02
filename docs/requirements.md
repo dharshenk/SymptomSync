@@ -30,7 +30,6 @@ The **SymptomSync** is a generative AI-powered system that interacts with patien
   - Duration and severity
   - Recent events (travel, injury, stress)
   - Medication intake
-  - Allergies
   - Chronic conditions
   - Lifestyle habits
 - Uses dynamic prompt engineering for follow-up questions

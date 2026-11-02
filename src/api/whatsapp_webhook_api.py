@@ -2,14 +2,16 @@ from typing import Annotated
 from jinja2 import Template
 from src.api.services.chat_history_service import ChatHistoryService
 from src.api.services.appointment_service import AppointmentService
-from src.api.services.function_tool_service import ToolContext
+from src.api.agent_tools import ToolContext
 from src.api.clients.postgres_sql_client import PostgresSQLClient
 from src.api.models.chat_session_model import ChatMessage, SenderType
+from src.api.models.patient_intake_model import PatientIntakeState
 from src.api.models.patient_model import Patient
 from src.api.models.telegram_model import TelegramUpdate
 from src.api.clients.whatsapp_client import WhatsAppClient, WhatsAppConfig
 from src.api.clients.telegram_client import TelegramClient, TelegramConfig
 from src.api.services.patient_service import PatientService
+from src.api.services.patient_intake_service import PatientIntakeService
 from agents import Agent, Runner
 from dotenv import load_dotenv
 from fastapi import Depends, APIRouter, Request
@@ -65,20 +67,39 @@ def get_appointment_service(
     return AppointmentService(postgres_client)
 
 
+def get_patient_intake_service(
+    postgres_client: Annotated[PostgresSQLClient, Depends(get_postgres_client)],
+) -> PatientIntakeService:
+    return PatientIntakeService(postgres_client)
+
+
 router = APIRouter()
+
+
+def messages_to_agent_items(previous_messages: list["ChatMessage"]) -> list[dict]:
+    """Convert stored chat messages into plain role/content agent input items."""
+
+    sender_type_map = {"patient": "user", "bot": "assistant"}
+
+    return [
+        {
+            "role": sender_type_map.get(msg.sender_type.lower()),
+            "content": msg.message_content,
+        }
+        for msg in previous_messages
+    ]
 
 
 def format_messages_for_runner(
     user_question: str,
     system_prompt: str,
-    previous_messages: list["ChatMessage"] | None = None,
+    previous_items: list[dict] | None = None,
 ) -> list[dict]:
     """
-    Build a chat message list for OpenAI's Runner.
-    Always appends the current user question, and prepends previous messages if given.
+    Build the input item list for OpenAI's Runner.
+    Always appends the current user question, and prepends previous agent items
+    (messages, tool calls and tool outputs) if given.
     """
-
-    sender_type_map = {"patient": "user", "bot": "assistant"}
 
     messages: list[dict] = [
         {
@@ -87,14 +108,8 @@ def format_messages_for_runner(
         }
     ]
 
-    if previous_messages:
-        messages.extend(
-            {
-                "role": sender_type_map.get(msg.sender_type.lower()),
-                "content": msg.message_content,
-            }
-            for msg in previous_messages
-        )
+    if previous_items:
+        messages.extend(previous_items)
 
     messages.append({"role": "user", "content": user_question})
 
@@ -126,6 +141,9 @@ async def get_response(
     chat_history_service: Annotated[
         ChatHistoryService, Depends(get_chat_history_service)
     ],
+    patient_intake_service: Annotated[
+        PatientIntakeService, Depends(get_patient_intake_service)
+    ],
     agent: Annotated[Agent, Depends(get_agent)],
     telegram_client: Annotated[TelegramClient, Depends(get_telegram_client)],
     appointment_service: Annotated[
@@ -134,7 +152,10 @@ async def get_response(
 ):
     patient_ph_no = str(telegram_webhook_request.message.from_user.id)
     session_id = uuid.uuid5(uuid.NAMESPACE_DNS, patient_ph_no)
-    patient_message = telegram_webhook_request.message.text
+    today_str = date.today().strftime("%A, %B %d, %Y")
+    patient_message = (
+        f"[Current date: {today_str}]\n{telegram_webhook_request.message.text}"
+    )
 
     patient = await patient_service.get_patient_by_patient_ph_no(patient_ph_no)
     if not patient:
@@ -164,10 +185,17 @@ async def get_response(
     )
     await chat_history_service.add_message(user_message)
 
+    previous_items = await chat_history_service.get_agent_items(chat_session.id)
+    if not previous_items and previous_messages:
+        # Session predates agent item storage: seed it from the text transcript
+        previous_items = messages_to_agent_items(previous_messages)
+        await chat_history_service.add_agent_items(chat_session.id, previous_items)
+
     system_prompt = get_system_prompt()
+    user_item = {"role": "user", "content": patient_message}
     input_list = format_messages_for_runner(
         user_question=patient_message,
-        previous_messages=previous_messages,
+        previous_items=previous_items,
         system_prompt=system_prompt,
     )
 
@@ -175,10 +203,20 @@ async def get_response(
         patient.id
     )
 
+    patient_intake_state = await patient_intake_service.get_intake_state(
+        chat_session.id
+    )
+    if not patient_intake_state:
+        patient_intake_state = await patient_intake_service.create_intake_state(
+            PatientIntakeState(chat_session_id=chat_session.id)
+        )
+
     tool_context = ToolContext(
         patient_id=patient.id,
         chat_session_id=chat_session.id,
         appointment_service=appointment_service,
+        patient_intake_service=patient_intake_service,
+        patient_intake_state=patient_intake_state,
         doctor_id=uuid.UUID("11111111-1111-1111-1111-111111111111"),
         appointment=latest_appointment,
         appointment_date=(
@@ -196,8 +234,13 @@ async def get_response(
     )
     await chat_history_service.add_message(ai_message)
 
+    await chat_history_service.add_agent_items(
+        chat_session.id,
+        [user_item] + [item.to_input_item() for item in response.new_items],
+    )
+
     # whatsapp_client.send_text_message(to=WHATSAPP_RECIPIENT_NUMBER, message=response.final_output)
-    telegram_client.send_message(patient_ph_no, response.final_output)
+    # telegram_client.send_message(patient_ph_no, response.final_output)
 
     return response.final_output
 

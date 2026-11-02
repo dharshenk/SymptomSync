@@ -1,3 +1,5 @@
+import json
+from typing import Any
 from src.api.clients.postgres_sql_client import PostgresSQLClient
 from src.api.models.chat_session_model import ChatSession, ChatMessage
 from uuid import UUID
@@ -126,3 +128,59 @@ class ChatHistoryService:
             for row in rows
         ]
         return messages
+
+    async def get_agent_items(self, session_id: UUID) -> list[dict[str, Any]]:
+        select_query = """
+            SELECT item::text AS item
+            FROM chat_agent_items
+            WHERE session_id = %(session_id)s
+            ORDER BY item_sequence ASC;
+        """
+
+        params = {"session_id": str(session_id)}
+        rows = self._postgres_client.execute_query(
+            query=select_query, params=params, fetch="all"
+        )
+        return [json.loads(row["item"]) for row in rows or []]
+
+    async def add_agent_items(
+        self, session_id: UUID, items: list[dict[str, Any]]
+    ) -> None:
+        if not items:
+            return
+
+        next_sequence_query = """
+            SELECT COALESCE(MAX(item_sequence), 0) + 1 AS next_sequence
+            FROM chat_agent_items
+            WHERE session_id = %(session_id)s;
+        """
+        rows = self._postgres_client.execute_query(
+            query=next_sequence_query,
+            params={"session_id": str(session_id)},
+            fetch="one",
+        )
+        start_sequence = rows[0]["next_sequence"]
+
+        insert_query = """
+            INSERT INTO chat_agent_items (
+                session_id,
+                item_sequence,
+                item
+            )
+            VALUES (
+                %(session_id)s,
+                %(item_sequence)s,
+                %(item)s
+            );
+        """
+
+        params_list = [
+            {
+                "session_id": str(session_id),
+                "item_sequence": start_sequence + offset,
+                "item": json.dumps(item),
+            }
+            for offset, item in enumerate(items)
+        ]
+        self._postgres_client.execute_many(query=insert_query, params_list=params_list)
+        return

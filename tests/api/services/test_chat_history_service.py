@@ -276,3 +276,46 @@ class TestChatHistoryServiceMessages:
         messages = await chat_history_service.get_session_messages(chat_session)
         assert messages is not None
         assert messages[0].message_type == "image"
+
+    async def test_agent_items_empty_session(
+        self,
+        chat_history_service: ChatHistoryService,
+        chat_session,
+    ):
+        assert await chat_history_service.get_agent_items(chat_session) == []
+
+    async def test_agent_items_round_trip_in_order(
+        self,
+        chat_history_service: ChatHistoryService,
+        chat_session,
+    ):
+        turn_one = [
+            {"role": "user", "content": "I need an appointment"},
+            {
+                "type": "function_call",
+                "call_id": "call_1",
+                "name": "get_available_slots",
+                "arguments": '{"date": "2026-10-23"}',
+            },
+            {
+                "type": "function_call_output",
+                "call_id": "call_1",
+                "output": "09:00-09:30",
+            },
+        ]
+        turn_two = [{"role": "user", "content": "9am please"}]
+
+        await chat_history_service.add_agent_items(chat_session, turn_one)
+        await chat_history_service.add_agent_items(chat_session, turn_two)
+
+        items = await chat_history_service.get_agent_items(chat_session)
+        assert items == turn_one + turn_two
+        assert list(items[1].keys()) == list(turn_one[1].keys())
+
+    async def test_add_agent_items_empty_is_noop(
+        self,
+        chat_history_service: ChatHistoryService,
+        chat_session,
+    ):
+        await chat_history_service.add_agent_items(chat_session, [])
+        assert await chat_history_service.get_agent_items(chat_session) == []

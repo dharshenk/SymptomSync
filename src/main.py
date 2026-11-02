@@ -1,19 +1,26 @@
 from contextlib import asynccontextmanager
 from agents.extensions.models.litellm_model import LitellmModel
 from fastapi import FastAPI
-from agents import Agent
+from agents import Agent, ModelSettings
+from openai.types.shared import Reasoning
 import os
 
 from src.api.clients.postgres_sql_client import PostgresSQLClient, DatabaseConfig
 from src.api.whatsapp_webhook_api import router as WhatsappRouter
 from src.api.health_api import router as HealthRouter
-from src.api.services.function_tool_service import (
-    book_appointment,
-    generate_patient_report,
+from src.api.agent_tools import (
     get_available_slots,
+    book_appointment,
+    update_patient_details,
 )
 
 from src.api.telemetry import setup_tracing
+
+model_settings = (
+    ModelSettings(reasoning=Reasoning(effort="none"))
+    if os.getenv("LLM_MODEL")
+    else ModelSettings()
+)
 
 
 def get_database_config() -> DatabaseConfig:
@@ -32,8 +39,9 @@ async def lifespan(app: FastAPI):
     app.state.postgres_client = PostgresSQLClient(database_config)
     app.state.agent = Agent(
         name="assistant",
-        model=LitellmModel(model=os.getenv("LLM_MODEL")),
-        tools=[book_appointment, generate_patient_report, get_available_slots],
+        model=os.getenv("LLM_MODEL") or LitellmModel(model=os.getenv("LITE_LLM_MODEL")),
+        model_settings=model_settings,
+        tools=[update_patient_details, get_available_slots, book_appointment],
     )
 
     yield

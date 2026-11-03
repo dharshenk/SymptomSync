@@ -2,7 +2,7 @@ from src.api.telemetry import trace_db_operation
 import json
 from typing import Any
 from src.api.clients.postgres_sql_client import PostgresSQLClient
-from src.api.models.chat_session_model import ChatSession, ChatMessage
+from src.api.models.chat_session_model import ChatSession, ChatMessage, SessionStatus
 from uuid import UUID
 
 
@@ -70,6 +70,34 @@ class ChatHistoryService:
             created_at=row["created_at"],
         )
         return chat_session
+
+    @trace_db_operation("chat_history.get_current_session")
+    async def get_current_session(self, patient_id: UUID) -> ChatSession | None:
+        """The Patient's newest active Chat Session, or None."""
+        select_query = """
+            SELECT id FROM chat_sessions
+            WHERE patient_id = %(patient_id)s AND session_status = 'active'
+            ORDER BY started_at DESC, created_at DESC
+            LIMIT 1;
+        """
+        rows = self._postgres_client.execute_query(
+            query=select_query, params={"patient_id": str(patient_id)}, fetch="one"
+        )
+        if not rows:
+            return None
+        return await self.get_session(rows[0]["id"])
+
+    @trace_db_operation("chat_history.close_session")
+    async def close_session(self, session_id: UUID, status: SessionStatus) -> None:
+        """Mark a Chat Session `completed` or `abandoned`."""
+        self._postgres_client.execute_command(
+            query="""
+                UPDATE chat_sessions
+                SET session_status = %(status)s, completed_at = NOW()
+                WHERE id = %(id)s;
+            """,
+            params={"id": str(session_id), "status": SessionStatus(status).value},
+        )
 
     @trace_db_operation("chat_history.add_message")
     async def add_message(self, chat_message: ChatMessage) -> None:

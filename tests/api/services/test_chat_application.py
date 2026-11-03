@@ -1,8 +1,11 @@
 """ChatApplication.handle_message against a fake AgentRuntime and the real test_db."""
 
+from datetime import date, time
+
 import pytest
 
 from src.api.chat_application import (
+    NEW_SESSION_REPLY,
     NOTHING_WAITING,
     STILL_WORKING,
     ChatApplication,
@@ -10,6 +13,7 @@ from src.api.chat_application import (
 from src.api.agent_runtime import Finished, NeedsApproval
 from src.api.conversation import session_id_for
 from src.api.models.chat_model import Decision, IncomingDecision, IncomingMessage
+from src.api.models.appointment_model import Appointment
 from src.api.models.chat_session_model import ChatMessage, SenderType
 from tests.api.fake_agent_runtime import FakeAgentRuntime
 
@@ -53,8 +57,14 @@ def make_app(
     # Chat sessions cascade to messages, items, intake and pending approvals.
     for sender in created:
         db_client.execute_command(
-            "DELETE FROM chat_sessions WHERE id = %(id)s;",
-            {"id": str(session_id_for(sender))},
+            "DELETE FROM appointments WHERE patient_id IN "
+            "(SELECT id FROM patients WHERE patient_ph_no = %(ph)s);",
+            {"ph": sender},
+        )
+        db_client.execute_command(
+            "DELETE FROM chat_sessions WHERE id = %(id)s OR patient_id IN "
+            "(SELECT id FROM patients WHERE patient_ph_no = %(ph)s);",
+            {"id": str(session_id_for(sender)), "ph": sender},
         )
         db_client.execute_command(
             "DELETE FROM patients WHERE patient_ph_no = %(ph)s;", {"ph": sender}
@@ -296,3 +306,199 @@ async def test_decision_while_another_is_processing_gets_still_working(
 
     assert reply.text == STILL_WORKING
     assert len(runtime.calls) == 1
+
+
+# --- /new: start a new Chat Session -------------------------------------
+
+
+async def test_new_session_starts_a_second_session_and_the_next_message_uses_it(
+    make_app, chat_history_service, patient_service
+):
+    app, runtime = make_app(Finished(text="a", items=[]), Finished(text="b", items=[]))
+    await app.handle_message(IncomingMessage(sender_id=SENDER, text="hi"))
+
+    reply = await app.start_new_session(SENDER)
+
+    assert reply.text == NEW_SESSION_REPLY and reply.choices == []
+    await app.handle_message(IncomingMessage(sender_id=SENDER, text="again"))
+    old_id = session_id_for(SENDER)
+    new_id = runtime.calls[1][3].chat_session_id
+    assert new_id != old_id
+    patient = await patient_service.get_patient_by_patient_ph_no(SENDER)
+    new_session = await chat_history_service.get_session(new_id)
+    assert new_session.patient_id == patient.id
+    assert new_session.session_status == "active"
+    assert (await chat_history_service.get_session(old_id)).session_status != "active"
+
+
+async def session_status(db_client, session_id):
+    rows = db_client.execute_query(
+        "SELECT session_status FROM chat_sessions WHERE id = %(id)s;",
+        {"id": str(session_id)},
+        fetch="one",
+    )
+    return rows[0]["session_status"]
+
+
+async def chat_then_new(app):
+    await app.handle_message(IncomingMessage(sender_id=SENDER, text="hi"))
+    return await app.start_new_session(SENDER)
+
+
+async def test_next_message_after_new_has_blank_history_and_intake(
+    make_app, patient_intake_service
+):
+    app, runtime = make_app(Finished(text="a", items=[]), Finished(text="b", items=[]))
+    await app.handle_message(IncomingMessage(sender_id=SENDER, text="hi"))
+    await patient_intake_service.update_intake_state(
+        session_id_for(SENDER), name="Pat", age=30
+    )
+    await app.start_new_session(SENDER)
+
+    await app.handle_message(IncomingMessage(sender_id=SENDER, text="Sam"))
+
+    _, history, text, context = runtime.calls[1]
+    assert history == [] and text == "Sam"
+    assert context.patient_intake_state.name is None
+    assert context.patient_intake_state.age is None
+
+
+async def test_next_message_after_new_sees_no_earlier_appointment(
+    make_app, appointment_service, patient_service, sample_doctor
+):
+    app, runtime = make_app(Finished(text="a", items=[]), Finished(text="b", items=[]))
+    await app.handle_message(IncomingMessage(sender_id=SENDER, text="hi"))
+    patient = await patient_service.get_patient_by_patient_ph_no(SENDER)
+    await appointment_service.book_appointment(
+        Appointment(
+            patient_id=patient.id,
+            doctor_id=sample_doctor.id,
+            chat_session_id=session_id_for(SENDER),
+            appointment_date=date(2030, 1, 1),
+            start_time=time(10, 0),
+            end_time=time(10, 30),
+        )
+    )
+    await app.handle_message(IncomingMessage(sender_id=SENDER, text="again"))
+    assert runtime.calls[1][3].appointment is not None
+
+    await app.start_new_session(SENDER)
+    runtime.outcomes.append(Finished(text="c", items=[]))
+    await app.handle_message(IncomingMessage(sender_id=SENDER, text="Sam"))
+
+    assert runtime.calls[2][3].appointment is None
+
+
+async def test_old_session_is_abandoned_when_intake_incomplete(make_app, db_client):
+    app, _ = make_app(Finished(text="a", items=[]))
+    await chat_then_new(app)
+
+    assert await session_status(db_client, session_id_for(SENDER)) == "abandoned"
+
+
+async def test_old_session_is_completed_when_intake_completed(
+    make_app, db_client, patient_intake_service
+):
+    app, _ = make_app(Finished(text="a", items=[]))
+    await app.handle_message(IncomingMessage(sender_id=SENDER, text="hi"))
+    await patient_intake_service.update_intake_state(
+        session_id_for(SENDER), status="completed"
+    )
+
+    await app.start_new_session(SENDER)
+
+    assert await session_status(db_client, session_id_for(SENDER)) == "completed"
+
+
+async def test_old_session_is_completed_when_an_appointment_was_booked(
+    make_app, db_client, appointment_service, patient_service, sample_doctor
+):
+    app, _ = make_app(Finished(text="a", items=[]))
+    await app.handle_message(IncomingMessage(sender_id=SENDER, text="hi"))
+    patient = await patient_service.get_patient_by_patient_ph_no(SENDER)
+    await appointment_service.book_appointment(
+        Appointment(
+            patient_id=patient.id,
+            doctor_id=sample_doctor.id,
+            chat_session_id=session_id_for(SENDER),
+            appointment_date=date(2030, 1, 2),
+            start_time=time(11, 0),
+            end_time=time(11, 30),
+        )
+    )
+
+    await app.start_new_session(SENDER)
+
+    assert await session_status(db_client, session_id_for(SENDER)) == "completed"
+
+
+async def test_new_discards_the_pending_approval_and_a_later_decision_does_nothing(
+    make_app, pending_approval_service
+):
+    app, runtime = make_app(NeedsApproval(state="s"))
+    await paused(app)
+
+    await app.start_new_session(SENDER)
+
+    assert await pending_approval_service.get(session_id_for(SENDER)) is None
+    reply = await app.handle_decision(decision(Decision.GO_AHEAD))
+    assert reply.text == NOTHING_WAITING and len(runtime.calls) == 1
+
+
+async def test_new_for_a_patient_with_no_history_creates_a_session_and_replies(
+    make_app, chat_history_service, patient_service
+):
+    app, _ = make_app()
+
+    reply = await app.start_new_session(SENDER)
+
+    assert reply.text == NEW_SESSION_REPLY
+    patient = await patient_service.get_patient_by_patient_ph_no(SENDER)
+    current = await chat_history_service.get_current_session(patient.id)
+    assert current.id != session_id_for(SENDER)
+
+
+async def test_repeated_new_works_and_messages_go_to_the_newest_session(
+    make_app, chat_history_service, patient_service, db_client
+):
+    app, runtime = make_app(Finished(text="a", items=[]), Finished(text="b", items=[]))
+    await app.start_new_session(SENDER)
+    await app.start_new_session(SENDER)
+    await app.start_new_session(SENDER)
+
+    await app.handle_message(IncomingMessage(sender_id=SENDER, text="hi"))
+    await app.handle_message(IncomingMessage(sender_id=SENDER, text="more"))
+
+    patient = await patient_service.get_patient_by_patient_ph_no(SENDER)
+    rows = db_client.execute_query(
+        "SELECT id FROM chat_sessions WHERE patient_id = %(p)s "
+        "AND session_status = 'active';",
+        {"p": str(patient.id)},
+        fetch="all",
+    )
+    assert len(rows) == 1
+    active = str(rows[0]["id"])
+    assert [str(c[3].chat_session_id) for c in runtime.calls] == [active, active]
+
+
+async def test_legacy_session_is_used_until_new_is_sent(make_app, chat_history_service):
+    app, runtime = make_app(Finished(text="a", items=[]))
+
+    await app.handle_message(IncomingMessage(sender_id=SENDER, text="hi"))
+
+    assert runtime.calls[0][3].chat_session_id == session_id_for(SENDER)
+
+
+async def test_old_messages_and_intake_state_remain_after_new(
+    make_app, chat_history_service, patient_intake_service
+):
+    app, _ = make_app(Finished(text="a", items=[]))
+    await app.handle_message(IncomingMessage(sender_id=SENDER, text="hi"))
+    await patient_intake_service.update_intake_state(session_id_for(SENDER), name="Pat")
+
+    await app.start_new_session(SENDER)
+
+    old = session_id_for(SENDER)
+    messages = await chat_history_service.get_session_messages(old)
+    assert [m.message_content for m in messages] == ["hi", "a"]
+    assert (await patient_intake_service.get_intake_state(old)).name == "Pat"

@@ -28,9 +28,14 @@ async def resolve_conversation(
     if not patient:
         patient = await patient_service.create_patient(Patient(patient_ph_no=sender_id))
 
-    session_id = session_id_for(sender_id)
-    chat_session = await chat_history_service.get_session(session_id)
+    # Newest active session; the Sender-ID-derived one is the legacy fallback.
+    chat_session = await chat_history_service.get_current_session(patient.id)
     if not chat_session:
-        chat_session = await chat_history_service.create_session(session_id, patient.id)
+        session_id = session_id_for(sender_id)
+        chat_session = await chat_history_service.get_session(session_id)
+        if not chat_session:
+            chat_session = await chat_history_service.create_session(
+                session_id, patient.id
+            )
 
     return Conversation(patient=patient, chat_session=chat_session)

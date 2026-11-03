@@ -3,6 +3,7 @@
 from contextlib import asynccontextmanager
 import asyncio
 import logging
+import re
 
 from src.api.chat_application import ChatApplication
 from src.api.clients.telegram_client import TelegramAPIError, TelegramClient
@@ -107,6 +108,14 @@ def remove_buttons(telegram_client: TelegramClient, callback_query: CallbackQuer
         )
 
 
+NEW_SESSION_COMMAND = re.compile(r"/new(@[A-Za-z0-9_]+)?", re.ASCII)
+
+
+def is_new_session_command(text: str) -> bool:
+    """True for `/new` and Telegram's `/new@BotName` form, and nothing else."""
+    return NEW_SESSION_COMMAND.fullmatch(text.strip()) is not None
+
+
 def parse_message(message: Message) -> IncomingMessage:
     return IncomingMessage(sender_id=str(message.from_user.id), text=message.text)
 
@@ -119,6 +128,11 @@ async def handle_message(
     A failed send is logged by `deliver_reply`, not raised.
     """
     incoming = parse_message(message)
+    if is_new_session_command(incoming.text):
+        # No agent run, so no typing indicator.
+        reply = await application.start_new_session(incoming.sender_id)
+        deliver_reply(telegram_client, incoming.sender_id, render_reply(reply))
+        return
     async with typing_indicator(telegram_client, incoming.sender_id) as stop_typing:
         reply = await application.handle_message(incoming)
         await stop_typing()

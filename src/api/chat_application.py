@@ -18,7 +18,7 @@ from src.api.models.chat_model import (
     IncomingMessage,
     Reply,
 )
-from src.api.models.chat_session_model import ChatMessage, SenderType
+from src.api.models.chat_session_model import ChatMessage, SenderType, SessionStatus
 from src.api.models.patient_intake_model import PatientIntakeState
 from src.api.models.patient_model import Patient
 from src.api.models.pending_approval_model import PendingApproval
@@ -31,6 +31,9 @@ from src.api.telemetry import set_span_attributes
 
 STILL_WORKING = "Still working on your booking, one moment."
 NOTHING_WAITING = "There is nothing waiting for your approval."
+NEW_SESSION_REPLY = (
+    "I've started a new session. You can start by giving your name, age and gender."
+)
 
 
 def get_doctor_id() -> uuid.UUID:
@@ -305,3 +308,36 @@ class ChatApplication:
             self.chat_history_service,
             self.pending_approval_service,
         )
+
+    async def start_new_session(self, sender_id: str) -> Reply:
+        """Close the current Chat Session and open a fresh one (`/new`)."""
+        patient, old_session = await resolve_conversation(
+            sender_id, self.patient_service, self.chat_history_service
+        )
+        set_span_attributes(
+            {"patient.id": str(patient.id), "chat_session.id": str(old_session.id)}
+        )
+
+        await self.pending_approval_service.delete(old_session.id)
+
+        intake_state = await self.patient_intake_service.get_intake_state(
+            old_session.id
+        )
+        appointment = await self.appointment_service.get_appointment_by_chat_session_id(
+            old_session.id
+        )
+        finished = bool(
+            (intake_state and intake_state.status == "completed") or appointment
+        )
+        await self.chat_history_service.close_session(
+            old_session.id,
+            SessionStatus.completed if finished else SessionStatus.abandoned,
+        )
+
+        new_session = await self.chat_history_service.create_session(
+            uuid.uuid4(), patient.id
+        )
+        await self.patient_intake_service.create_intake_state(
+            PatientIntakeState(chat_session_id=new_session.id)
+        )
+        return Reply(text=NEW_SESSION_REPLY)

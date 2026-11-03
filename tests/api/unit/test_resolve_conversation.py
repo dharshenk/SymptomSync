@@ -25,6 +25,9 @@ class FakeChatHistoryService:
         self.sessions = dict(sessions or {})
         self.created = []
 
+    async def get_current_session(self, patient_id):
+        return None  # no newer session: the legacy ID path is used
+
     async def get_session(self, session_id):
         return self.sessions.get(session_id)
 

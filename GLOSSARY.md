@@ -9,12 +9,16 @@ A person who chats with the assistant to arrange an appointment.
 _Avoid_: User, customer
 
 **Sender ID**:
-The identifier the messaging platform gives a Patient; it identifies the Patient and their Chat Session. Stored in the legacy-named `patient_ph_no` field, although it is not a phone number.
+The identifier the messaging platform gives a Patient; it identifies the Patient, not a single Chat Session. Stored in the legacy-named `patient_ph_no` field, although it is not a phone number.
 _Avoid_: Phone number, ph_no
 
 **Chat Session**:
-The single ongoing conversation between one Patient and the assistant, including its message history.
+A conversation between one Patient and the assistant, including its message history. A Patient can have several over time; the newest active one is the current one. Ends `completed` (intake completed or appointment booked) or `abandoned`.
 _Avoid_: Thread, conversation
+
+**New Session**:
+The Patient's `/new` command: closes the current Chat Session, discards any Pending Approval and opens a fresh Chat Session with blank history and Intake State. Appointments are kept; no Agent Run happens.
+_Avoid_: Reset, restart
 
 **Intake State**:
 The details gathered from the Patient so far (name, age, gender, symptoms, conditions, medications, preferred date and start time) for the current Chat Session.

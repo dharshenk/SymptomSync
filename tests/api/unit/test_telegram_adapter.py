@@ -51,6 +51,12 @@ class FakeApplication:
         self.received: list[IncomingMessage] = []
         self.decisions: list[IncomingDecision] = []
         self.prompted_for: list[str] = []
+        self.new_sessions: list[str] = []
+
+    async def start_new_session(self, sender_id):
+        self.new_sessions.append(sender_id)
+        self.events.append("new")
+        return self.reply
 
     async def handle_decision(self, decision):
         self.decisions.append(decision)
@@ -74,6 +80,45 @@ def make_telegram(events: list) -> Mock:
     telegram.remove_inline_keyboard.side_effect = lambda *a: events.append("unbutton")
     telegram.answer_callback_query.side_effect = lambda *a: events.append("ack")
     return telegram
+
+
+def message_with(text):
+    update = TelegramWebhookUpdate.model_validate(
+        {
+            "update_id": 1,
+            "message": {
+                "message_id": 1,
+                "from": USER,
+                "chat": {"id": 42, "first_name": "Pat", "type": "private"},
+                "date": 0,
+                "text": text,
+            },
+        }
+    )
+    return update.message
+
+
+@pytest.mark.parametrize("text", ["/new", "/new@SymptomBot", " /new "])
+async def test_new_command_starts_a_new_session_and_sends_the_reply(text):
+    events: list = []
+    app, telegram = FakeApplication(Reply(text="fresh"), events), make_telegram(events)
+
+    await telegram_adapter.handle_message(message_with(text), app, telegram)
+
+    assert app.new_sessions == ["42"] and app.received == []
+    telegram.send_message.assert_called_once_with("42", text="fresh")
+
+
+@pytest.mark.parametrize(
+    "text", ["/start", "/newer", "/new please", "new", "/foo", "/new@", "/new@a-b"]
+)
+async def test_other_text_is_an_ordinary_message(text):
+    app, telegram = FakeApplication(Reply(text="ok"), []), make_telegram([])
+
+    await telegram_adapter.handle_message(message_with(text), app, telegram)
+
+    assert app.new_sessions == []
+    assert app.received == [IncomingMessage(sender_id="42", text=text)]
 
 
 def test_message_is_parsed_into_an_incoming_message():

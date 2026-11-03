@@ -318,8 +318,6 @@ class ChatApplication:
             {"patient.id": str(patient.id), "chat_session.id": str(old_session.id)}
         )
 
-        await self.pending_approval_service.delete(old_session.id)
-
         intake_state = await self.patient_intake_service.get_intake_state(
             old_session.id
         )
@@ -329,15 +327,10 @@ class ChatApplication:
         finished = bool(
             (intake_state and intake_state.status == "completed") or appointment
         )
-        await self.chat_history_service.close_session(
+        await self.chat_history_service.replace_session(
             old_session.id,
+            uuid.uuid4(),
+            patient.id,
             SessionStatus.completed if finished else SessionStatus.abandoned,
-        )
-
-        new_session = await self.chat_history_service.create_session(
-            uuid.uuid4(), patient.id
-        )
-        await self.patient_intake_service.create_intake_state(
-            PatientIntakeState(chat_session_id=new_session.id)
         )
         return Reply(text=NEW_SESSION_REPLY)

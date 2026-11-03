@@ -1,6 +1,7 @@
 """ChatApplication.handle_message against a fake AgentRuntime and the real test_db."""
 
 from datetime import date, time
+from uuid import uuid4
 
 import pytest
 
@@ -11,6 +12,7 @@ from src.api.chat_application import (
     ChatApplication,
 )
 from src.api.agent_runtime import Finished, NeedsApproval
+from src.api.clients.postgres_sql_client import DatabaseError
 from src.api.conversation import session_id_for
 from src.api.models.chat_model import Decision, IncomingDecision, IncomingMessage
 from src.api.models.appointment_model import Appointment
@@ -502,3 +504,51 @@ async def test_old_messages_and_intake_state_remain_after_new(
     messages = await chat_history_service.get_session_messages(old)
     assert [m.message_content for m in messages] == ["hi", "a"]
     assert (await patient_intake_service.get_intake_state(old)).name == "Pat"
+
+
+@pytest.mark.parametrize(
+    "table, column",
+    [("chat_sessions", "id"), ("patient_intake_state", "chat_session_id")],
+)
+async def test_failed_new_preserves_current_session_and_pending_approval(
+    make_app,
+    chat_history_service,
+    patient_service,
+    pending_approval_service,
+    patient_intake_service,
+    db_client,
+    monkeypatch,
+    table,
+    column,
+):
+    app, _ = make_app(NeedsApproval(state="paused"))
+    await app.handle_message(IncomingMessage(sender_id=SENDER, text="hi"))
+    old_id = session_id_for(SENDER)
+    pending = await pending_approval_service.get(old_id)
+    old_intake = await patient_intake_service.get_intake_state(old_id)
+    new_id = uuid4()
+    monkeypatch.setattr("src.api.chat_application.uuid.uuid4", lambda: new_id)
+
+    # Reject either new row in PostgreSQL, after earlier writes have executed.
+    # Identifiers come exclusively from the fixed parameter list above.
+    db_client.execute_command(
+        f"ALTER TABLE {table} ADD CONSTRAINT reject_new_session "
+        f"CHECK ({column} <> '{new_id}'::uuid) NOT VALID;"
+    )
+    try:
+        with pytest.raises(DatabaseError):
+            await app.start_new_session(SENDER)
+    finally:
+        db_client.execute_command(
+            f"ALTER TABLE {table} DROP CONSTRAINT reject_new_session;"
+        )
+
+    patient = await patient_service.get_patient_by_patient_ph_no(SENDER)
+    old_session = await chat_history_service.get_session(old_id)
+    assert old_session.session_status == "active"
+    assert old_session.completed_at is None
+    assert (await chat_history_service.get_current_session(patient.id)).id == old_id
+    assert await pending_approval_service.get(old_id) == pending
+    assert await patient_intake_service.get_intake_state(old_id) == old_intake
+    assert await chat_history_service.get_session(new_id) is None
+    assert await patient_intake_service.get_intake_state(new_id) is None

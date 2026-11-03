@@ -99,6 +99,45 @@ class ChatHistoryService:
             params={"id": str(session_id), "status": SessionStatus(status).value},
         )
 
+    @trace_db_operation("chat_history.replace_session")
+    async def replace_session(
+        self,
+        old_session_id: UUID,
+        new_session_id: UUID,
+        patient_id: UUID,
+        status: SessionStatus,
+    ) -> ChatSession:
+        """Close the old session and create a fresh one with blank intake atomically.
+
+        Pending approval deletion belongs to the same transaction, so a failed
+        replacement leaves the old session usable. execute_command commits this
+        entire SQL batch once and rolls it back if any statement fails.
+        """
+        new_session = ChatSession(id=new_session_id, patient_id=patient_id)
+        self._postgres_client.execute_command(
+            query="""
+                DELETE FROM pending_approvals
+                WHERE chat_session_id = %(old_session_id)s;
+
+                UPDATE chat_sessions
+                SET session_status = %(status)s, completed_at = NOW()
+                WHERE id = %(old_session_id)s;
+
+                INSERT INTO chat_sessions (id, patient_id)
+                VALUES (%(new_session_id)s, %(patient_id)s);
+
+                INSERT INTO patient_intake_state (chat_session_id)
+                VALUES (%(new_session_id)s);
+            """,
+            params={
+                "old_session_id": str(old_session_id),
+                "new_session_id": str(new_session_id),
+                "patient_id": str(patient_id),
+                "status": SessionStatus(status).value,
+            },
+        )
+        return new_session
+
     @trace_db_operation("chat_history.add_message")
     async def add_message(self, chat_message: ChatMessage) -> None:
         insert_query = """

@@ -31,14 +31,7 @@ Known risks that are not fixed yet. Each entry says where it lives, when it trig
   - Re-read the state from the DB inside `book_appointment` only, as a cheap guard on the one irreversible action.
   - Compare `updated_at` on the cached state against the DB before booking, and refuse or reload if they differ.
 
-## 4. `/new` is not atomic
-
-- **Where:** `src/api/chat_application.py` (`start_new_session`).
-- **Trigger:** the old session is closed and the new one is created in separate commands, and the process or DB fails between them.
-- **Effect:** no session is active. The next message falls back to the legacy-ID session (which may be the one just closed) or creates a new one.
-- **Possible fix:** close the old session and insert the new one in a single transaction.
-
-## 5. `/new@OtherBot` resets this bot too
+## 4. `/new@OtherBot` resets this bot too
 
 - **Where:** `src/api/telegram_adapter.py` (command parsing of `/new` and `/new@BotName`).
 - **Trigger:** a message containing `/new@<any other bot name>` reaches this bot's webhook.

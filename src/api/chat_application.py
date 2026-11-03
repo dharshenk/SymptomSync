@@ -87,8 +87,8 @@ async def build_tool_context(
     appointment_service: AppointmentService,
     patient_intake_service: PatientIntakeService,
 ) -> ToolContext:
-    latest_appointment = await appointment_service.get_appointment_by_patient_id(
-        patient.id
+    latest_appointment = await appointment_service.get_appointment_by_chat_session_id(
+        chat_session_id
     )
 
     patient_intake_state = await patient_intake_service.get_intake_state(

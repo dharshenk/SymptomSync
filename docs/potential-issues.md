@@ -30,3 +30,17 @@ Known risks that are not fixed yet. Each entry says where it lives, when it trig
   - Serialize webhook handling per chat session (an in-process lock or a Redis lock keyed on `session_id`). This is the most complete fix, since the chat history has the same ordering problem.
   - Re-read the state from the DB inside `book_appointment` only, as a cheap guard on the one irreversible action.
   - Compare `updated_at` on the cached state against the DB before booking, and refuse or reload if they differ.
+
+## 4. `/new` is not atomic
+
+- **Where:** `src/api/chat_application.py` (`start_new_session`).
+- **Trigger:** the old session is closed and the new one is created in separate commands, and the process or DB fails between them.
+- **Effect:** no session is active. The next message falls back to the legacy-ID session (which may be the one just closed) or creates a new one.
+- **Possible fix:** close the old session and insert the new one in a single transaction.
+
+## 5. `/new@OtherBot` resets this bot too
+
+- **Where:** `src/api/telegram_adapter.py` (command parsing of `/new` and `/new@BotName`).
+- **Trigger:** a message containing `/new@<any other bot name>` reaches this bot's webhook.
+- **Effect:** the session is reset even though the command was addressed to a different bot. The adapter accepts any `@BotName` suffix because it does not know its own bot username.
+- **Possible fix:** read this bot's username at startup (`getMe`) or from config, and only accept `/new` or `/new@<own username>`.
